@@ -20,7 +20,6 @@ export default function Sidebar() {
           height={32}
           className="object-contain"
           priority
-          onError={() => {}}
         />
       </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
