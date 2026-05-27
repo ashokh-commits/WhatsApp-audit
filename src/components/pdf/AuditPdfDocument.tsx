@@ -7,8 +7,7 @@ import {
   StyleSheet,
 } from "@react-pdf/renderer";
 import type { AuditDimensionScores } from "@/types/scoring";
-import type { AuditMetrics } from "@/types/audit";
-import { DIMENSION_LABELS, DIMENSION_WEIGHTS } from "@/types/scoring";
+import { DIMENSION_LABELS } from "@/types/scoring";
 
 const styles = StyleSheet.create({
   page: {

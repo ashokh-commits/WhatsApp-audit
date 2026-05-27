@@ -7,8 +7,7 @@ import Card, { CardTitle } from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import ExportButton from "./ExportButton";
 import PaidLeakageSection from "./PaidLeakageSection";
-import { formatCurrency, formatPct } from "@/lib/utils/format";
-import { formatSeconds } from "@/lib/utils/time";
+import { formatPct } from "@/lib/utils/format";
 
 interface AuditRow {
   id: string;

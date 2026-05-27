@@ -2,9 +2,6 @@
 
 import { useState } from "react";
 import Button from "@/components/ui/Button";
-import type { AuditDimensionScores } from "@/types/scoring";
-import type { AuditMetrics } from "@/types/audit";
-import { DIMENSION_LABELS, DIMENSION_WEIGHTS } from "@/types/scoring";
 
 interface AuditForExport {
   id: string;
