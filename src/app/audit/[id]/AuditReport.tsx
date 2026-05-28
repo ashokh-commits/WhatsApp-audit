@@ -9,6 +9,45 @@ import ExportButton from "./ExportButton";
 import PaidLeakageSection from "./PaidLeakageSection";
 import { formatPct } from "@/lib/utils/format";
 
+
+function PeakHoursChart({ hourly }: { hourly: number[] }) {
+  const max = Math.max(...hourly, 1);
+  const peakThreshold = max * 0.65;
+  return (
+    <div>
+      <div className="flex items-end gap-px h-24">
+        {hourly.map((count, hour) => {
+          const heightPct = Math.max((count / max) * 100, count > 0 ? 4 : 0);
+          const isPeak = count >= peakThreshold && count > 0;
+          return (
+            <div
+              key={hour}
+              title={`${hour}:00 — ${count} messages`}
+              className="flex-1 rounded-t-sm transition-all"
+              style={{
+                height: `${heightPct}%`,
+                backgroundColor: count === 0 ? "#252525" : isPeak ? "#FF4500" : "#059669",
+              }}
+            />
+          );
+        })}
+      </div>
+      <div className="flex justify-between mt-1.5 font-body text-[10px] text-gray-500">
+        <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span>
+      </div>
+      <div className="flex items-center gap-4 mt-2">
+        <span className="flex items-center gap-1.5 font-body text-xs text-gray-400">
+          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-600 inline-block" /> Non-peak
+        </span>
+        <span className="flex items-center gap-1.5 font-body text-xs text-gray-400">
+          <span className="w-2.5 h-2.5 rounded-sm bg-g6-accent inline-block" /> Peak
+        </span>
+      </div>
+    </div>
+  );
+}
+
+
 interface AuditRow {
   id: string;
   client_id: string;
@@ -119,6 +158,7 @@ export default function AuditReport({ audit, clientName, ctwaRows, metaRows }: P
     .sort((a, b) => b.severity - a.severity);
 
   const coverage = metrics?.coveragePct ?? 0;
+  const hourlyActivity = metrics?.hourlyActivity ?? null;
 
   return (
     <div className="space-y-8">
@@ -212,6 +252,17 @@ export default function AuditReport({ audit, clientName, ctwaRows, metaRows }: P
               </li>
             ))}
           </ol>
+        </Card>
+      )}
+
+      {/* Peak Hours */}
+      {hourlyActivity && hourlyActivity.some((v: number) => v > 0) && (
+        <Card>
+          <CardTitle className="mb-1">Message Activity by Hour</CardTitle>
+          <p className="font-body text-xs text-gray-500 mb-4">
+            When customers send messages — helps schedule staffing and automation
+          </p>
+          <PeakHoursChart hourly={hourlyActivity} />
         </Card>
       )}
 

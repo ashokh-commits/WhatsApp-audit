@@ -9,7 +9,7 @@ export default function Card({ children, className }: CardProps) {
   return (
     <div
       className={cn(
-        "rounded-xl border border-g6-border bg-g6-card p-6 shadow-sm",
+        "rounded-xl border border-g6-border bg-g6-card p-5 shadow-card",
         className
       )}
     >
@@ -22,7 +22,7 @@ export function CardTitle({ children, className }: CardProps) {
   return (
     <h2
       className={cn(
-        "font-heading text-lg font-semibold text-white",
+        "font-heading text-base font-semibold text-white",
         className
       )}
     >

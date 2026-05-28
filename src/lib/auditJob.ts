@@ -135,7 +135,13 @@ export async function runAuditJob(
       await delay(RATE_LIMIT_DELAY_MS);
     }
 
-    // ── 5. Fetch Meta ad rows for CTWA join ───────────────────────────────────
+    // ── 5. Compute hourly activity distribution ───────────────────────────────
+    const hourlyActivity = new Array(24).fill(0) as number[];
+    for (const msg of allMessages) {
+      hourlyActivity[new Date(msg.timestamp * 1000).getHours()]++;
+    }
+
+    // ── 6. Fetch Meta ad rows for CTWA join ───────────────────────────────────
     await setProgress(auditId, "scoring", 72);
     const { data: metaRows } = await admin
       .from("meta_ad_rows")
@@ -181,6 +187,7 @@ export async function runAuditJob(
       ctwaConversationCount: matchedCTWA.length,
       coveragePct: ctwaMetrics?.coveragePct ?? 0,
       ctwaMetrics: ctwaMetrics ?? undefined,
+      hourlyActivity,
       windowDays,
       windowStart: sinceDate.toISOString(),
       windowEnd: new Date().toISOString(),

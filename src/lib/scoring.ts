@@ -42,6 +42,8 @@ function isInboundInitiated(chat: ChatMessages): boolean {
   return first ? !first.fromMe : false;
 }
 
+const SLOW_REPLY_THRESHOLD_S = 30 * 60; // 30 minutes
+
 export function computeResponseSpeed(messages: SanitizedMessage[]): DimensionResult {
   const chats = groupByChat(messages).filter(isInboundInitiated);
 
@@ -54,24 +56,44 @@ export function computeResponseSpeed(messages: SanitizedMessage[]): DimensionRes
     };
   }
 
-  const responseDeltas: number[] = [];
+  const firstResponseDeltas: number[] = [];
   let afterHoursSlowCount = 0;
+  let slowReplyCount = 0;
+  let totalReplies = 0;
 
   for (const chat of chats) {
-    const firstInbound = chat.messages.find((m) => !m.fromMe);
-    if (!firstInbound) continue;
-    const firstReply = chat.messages.find(
-      (m) => m.fromMe && m.timestamp > firstInbound.timestamp
-    );
-    if (!firstReply) continue;
-    const delta = firstReply.timestamp - firstInbound.timestamp;
-    responseDeltas.push(delta);
-    if (isAfterHours(firstInbound.timestamp) && delta > 8 * 3600) {
-      afterHoursSlowCount++;
+    const inboundMsgs = chat.messages.filter((m) => !m.fromMe);
+
+    // First-response delta
+    const firstInbound = inboundMsgs[0];
+    if (firstInbound) {
+      const firstReply = chat.messages.find(
+        (m) => m.fromMe && m.timestamp > firstInbound.timestamp
+      );
+      if (firstReply) {
+        const delta = firstReply.timestamp - firstInbound.timestamp;
+        firstResponseDeltas.push(delta);
+        if (isAfterHours(firstInbound.timestamp) && delta > 8 * 3600) {
+          afterHoursSlowCount++;
+        }
+      }
+    }
+
+    // All reply times — flag any > 30 min
+    for (const inbound of inboundMsgs) {
+      const reply = chat.messages.find(
+        (m) => m.fromMe && m.timestamp > inbound.timestamp
+      );
+      if (reply) {
+        totalReplies++;
+        if (reply.timestamp - inbound.timestamp > SLOW_REPLY_THRESHOLD_S) {
+          slowReplyCount++;
+        }
+      }
     }
   }
 
-  if (responseDeltas.length === 0) {
+  if (firstResponseDeltas.length === 0) {
     return {
       score: 0,
       rawMetric: { medianResponseSeconds: null, pctUnder1h: 0, chats: chats.length },
@@ -80,8 +102,9 @@ export function computeResponseSpeed(messages: SanitizedMessage[]): DimensionRes
     };
   }
 
-  const med = median(responseDeltas);
-  const pctUnder1h = responseDeltas.filter((d) => d <= 3600).length / responseDeltas.length * 100;
+  const med = median(firstResponseDeltas);
+  const pctUnder1h =
+    (firstResponseDeltas.filter((d) => d <= 3600).length / firstResponseDeltas.length) * 100;
 
   let score: number;
   if (med <= 300) score = 100;
@@ -89,23 +112,40 @@ export function computeResponseSpeed(messages: SanitizedMessage[]): DimensionRes
   else if (med <= 14400) score = 40;
   else score = 0;
 
+  // After-hours first-response penalty (up to -15)
   const afterHoursPenalty = Math.min(
     15,
     Math.round((afterHoursSlowCount / chats.length) * 15)
   );
   score = Math.max(0, score - afterHoursPenalty);
 
+  // Overall slow-reply penalty — each % of replies > 30 min costs up to -20 pts
+  const slowReplyRate = totalReplies > 0 ? slowReplyCount / totalReplies : 0;
+  const slowReplyPenalty = Math.round(slowReplyRate * 20);
+  score = Math.max(0, score - slowReplyPenalty);
+
   const medMins = Math.round(med / 60);
+  const slowPct = totalReplies > 0 ? ((slowReplyCount / totalReplies) * 100).toFixed(0) : "0";
+
   const businessImpact =
-    med <= 300
-      ? `Excellent — median first reply is ${medMins} minutes. Leads are engaged while interest is high.`
+    med <= 300 && slowReplyCount === 0
+      ? `Excellent — median first reply ${medMins}m. All replies within 30 minutes.`
+      : med <= 300
+      ? `Median first reply ${medMins}m, but ${slowPct}% of all replies took over 30 minutes.`
       : med <= 3600
-      ? `Median first reply is ${medMins} minutes. ${pctUnder1h.toFixed(0)}% of leads answered within 1 hour.`
-      : `Median first reply is ${(med / 3600).toFixed(1)} hours — leads may have moved on. Only ${pctUnder1h.toFixed(0)}% answered within 1 hour.`;
+      ? `Median first reply ${medMins}m. ${slowPct}% of replies exceeded the 30-minute threshold.`
+      : `Median first reply ${(med / 3600).toFixed(1)}h — leads may drop off. ${slowPct}% of replies over 30 minutes.`;
 
   return {
     score,
-    rawMetric: { medianResponseSeconds: med, pctUnder1h, chats: chats.length },
+    rawMetric: {
+      medianResponseSeconds: med,
+      pctUnder1h,
+      chats: chats.length,
+      slowReplyCount,
+      totalReplies,
+      slowReplyRate,
+    },
     status: status(score, 70, 40),
     businessImpact,
   };

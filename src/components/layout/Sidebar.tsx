@@ -10,7 +10,7 @@ const navItems = [
 
 export default function Sidebar() {
   return (
-    <aside className="flex h-screen w-56 flex-col border-r border-g6-border bg-g6-surface">
+    <aside className="hidden md:flex h-screen w-56 flex-col border-r border-g6-border bg-g6-surface">
       <div className="flex h-16 items-center border-b border-g6-border px-4">
         {/* Replace with actual G6-White.png once available */}
         <Image

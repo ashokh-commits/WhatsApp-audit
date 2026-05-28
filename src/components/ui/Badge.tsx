@@ -8,13 +8,13 @@ interface BadgeProps {
 }
 
 const statusColors: Record<string, string> = {
-  good:     "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  warning:  "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  critical: "bg-red-500/20 text-red-400 border-red-500/30",
-  pending:  "bg-gray-500/20 text-gray-400 border-gray-500/30",
-  running:  "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  complete: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  failed:   "bg-red-500/20 text-red-400 border-red-500/30",
+  good:     "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  warning:  "bg-orange-500/15 text-orange-400 border-orange-500/30",
+  critical: "bg-red-500/15 text-red-400 border-red-500/30",
+  pending:  "bg-gray-500/15 text-gray-400 border-gray-500/30",
+  running:  "bg-g6-accent/15 text-g6-accent border-g6-accent/30",
+  complete: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  failed:   "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
 export default function Badge({ status, label, className }: BadgeProps) {

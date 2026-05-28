@@ -54,11 +54,11 @@ export default async function AuditPage({ params }: Props) {
   const isRunning = audit.status === "pending" || audit.status === "running";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-g6-bg">
+    <div className="flex min-h-screen md:h-screen md:overflow-hidden bg-g6-bg">
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col md:overflow-hidden">
         <TopBar title={`Audit — ${client?.name ?? "Client"}`} />
-        <main className="flex-1 overflow-y-auto px-6 py-6">
+        <main className="flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6 pb-20 md:pb-6">
           {isRunning && (
             <AuditProgressModal
               auditId={params.id}

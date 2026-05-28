@@ -11,15 +11,21 @@ const config: Config = {
       colors: {
         g6: {
           bg:      "#0A0A0A",
-          surface: "#111318",
-          card:    "#1A1D24",
-          border:  "#2A2D36",
-          accent:  "#4F9CF9",
+          surface: "#0F0F0F",
+          card:    "#141414",
+          border:  "#252525",
+          accent:  "#FF4500",
+          orange:  "#FF6A00",
+          red:     "#CC1100",
         },
       },
       fontFamily: {
         heading: ['"Trebuchet MS"', "ui-sans-serif", "system-ui"],
         body:    ["Calibri", "ui-sans-serif", "system-ui"],
+      },
+      boxShadow: {
+        orange: "0 4px 24px rgba(255,69,0,0.25)",
+        card:   "0 2px 12px rgba(0,0,0,0.5)",
       },
     },
   },

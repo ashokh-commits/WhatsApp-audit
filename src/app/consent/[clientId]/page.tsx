@@ -46,11 +46,11 @@ export default async function ConsentPage({ params }: Props) {
   if (!client) redirect("/dashboard");
 
   return (
-    <div className="flex h-screen overflow-hidden bg-g6-bg">
+    <div className="flex min-h-screen md:h-screen md:overflow-hidden bg-g6-bg">
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col md:overflow-hidden">
         <TopBar title={`Consent — ${client.name}`} />
-        <main className="flex-1 overflow-y-auto px-6 py-6">
+        <main className="flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6 pb-20 md:pb-6">
           <div className="mx-auto max-w-lg space-y-6">
             {consent && (
               <Card className="border-emerald-500/30 bg-emerald-500/5">

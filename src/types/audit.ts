@@ -18,6 +18,7 @@ export interface AuditMetrics {
   windowDays?: number;
   windowStart?: string;
   windowEnd?: string;
+  hourlyActivity?: number[];
 }
 
 export interface AuditRow {
