@@ -5,6 +5,8 @@ import {
   View,
   Text,
   StyleSheet,
+  Svg,
+  Circle,
 } from "@react-pdf/renderer";
 import type { AuditDimensionScores } from "@/types/scoring";
 import { DIMENSION_LABELS } from "@/types/scoring";
@@ -26,16 +28,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#9ca3af",
     marginBottom: 24,
-  },
-  scoreCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 6,
-    borderColor: "#4F9CF9",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
   },
   scoreText: {
     fontSize: 28,
@@ -151,12 +143,30 @@ export default function AuditPdfDocument({
 
         {/* Overall score */}
         <View style={{ alignItems: "center", marginBottom: 20 }}>
-          <View
-            style={[styles.scoreCircle, { borderColor: scoreColor(score) }]}
-          >
-            <Text style={[styles.scoreText, { color: scoreColor(score) }]}>
-              {score}
-            </Text>
+          <View style={{ width: 100, height: 100, position: "relative", alignItems: "center", justifyContent: "center" }}>
+            {(() => {
+              const r = 42;
+              const cx = 50;
+              const cy = 50;
+              const circumference = 2 * Math.PI * r;
+              const filled = (score / 100) * circumference;
+              const gap = circumference - filled;
+              return (
+                <Svg width="100" height="100" viewBox="0 0 100 100" style={{ position: "absolute", top: 0, left: 0 }}>
+                  <Circle cx={cx} cy={cy} r={r} fill="none" stroke="#2A2D36" strokeWidth="8" />
+                  <Circle
+                    cx={cx} cy={cy} r={r}
+                    fill="none"
+                    stroke={scoreColor(score)}
+                    strokeWidth="8"
+                    strokeDasharray={`${filled} ${gap}`}
+                    strokeLinecap="round"
+                    transform={`rotate(-90 ${cx} ${cy})`}
+                  />
+                </Svg>
+              );
+            })()}
+            <Text style={[styles.scoreText, { color: scoreColor(score) }]}>{score}</Text>
           </View>
           <Text style={{ fontSize: 10, color: "#9ca3af" }}>Overall Score / 100</Text>
         </View>
