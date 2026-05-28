@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
 import { hasConsent } from "@/actions/consent";
 import { runAuditJob } from "@/lib/auditJob";
@@ -52,8 +53,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error?.message ?? "Failed to create audit" }, { status: 500 });
   }
 
-  const jobPromise = runAuditJob(audit.id, clientId, windowDays);
-  jobPromise.catch((err) => console.error("Audit job error:", err));
+  waitUntil(
+    runAuditJob(audit.id, clientId, windowDays).catch((err) =>
+      console.error("Audit job error:", err)
+    )
+  );
 
   return NextResponse.json({ auditId: audit.id }, { status: 202 });
 }
