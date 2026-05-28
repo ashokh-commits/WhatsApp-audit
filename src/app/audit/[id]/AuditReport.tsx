@@ -230,7 +230,7 @@ export default function AuditReport({ audit, clientName, avgTicketValue = 0, ctw
               : ""}
           </p>
         </div>
-        <ExportButton audit={audit} clientName={clientName} />
+        <ExportButton auditId={audit.id} />
       </div>
 
       {/* Score + Summary row */}

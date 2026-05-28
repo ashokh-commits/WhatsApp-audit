@@ -9,7 +9,8 @@ import {
   Circle,
 } from "@react-pdf/renderer";
 import type { AuditDimensionScores } from "@/types/scoring";
-import { DIMENSION_LABELS } from "@/types/scoring";
+import type { RevenueAtRisk } from "@/types/audit";
+import { DIMENSION_LABELS, DIMENSION_WEIGHTS } from "@/types/scoring";
 
 const styles = StyleSheet.create({
   page: {
@@ -36,11 +37,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: "Helvetica-Bold",
     color: "#ffffff",
     marginTop: 20,
-    marginBottom: 10,
+    marginBottom: 8,
     paddingBottom: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#2A2D36",
@@ -49,24 +50,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderBottomWidth: 1,
-    borderBottomColor: "#2A2D36",
+    borderBottomColor: "#1f2229",
   },
   dimLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontFamily: "Helvetica-Bold",
     color: "#ffffff",
     flex: 1,
   },
+  dimWeight: {
+    fontSize: 8,
+    color: "#6b7280",
+    width: 28,
+    textAlign: "right",
+  },
   dimScore: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: "Helvetica-Bold",
-    width: 36,
+    width: 30,
     textAlign: "right",
   },
   dimImpact: {
-    fontSize: 9,
+    fontSize: 8,
     color: "#9ca3af",
     flex: 2,
     marginLeft: 8,
@@ -83,8 +90,8 @@ const styles = StyleSheet.create({
   },
   metaRow: {
     flexDirection: "row",
-    gap: 24,
-    marginBottom: 16,
+    gap: 16,
+    marginBottom: 12,
   },
   metaItem: {
     flex: 1,
@@ -92,13 +99,35 @@ const styles = StyleSheet.create({
   metaLabel: {
     fontSize: 8,
     color: "#6b7280",
-    textTransform: "uppercase",
     marginBottom: 2,
   },
   metaValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: "Helvetica-Bold",
     color: "#ffffff",
+  },
+  rarBox: {
+    backgroundColor: "#1a0d00",
+    borderWidth: 1,
+    borderColor: "#7c2d0a",
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 16,
+  },
+  rarLabel: {
+    fontSize: 8,
+    color: "#f97316",
+    marginBottom: 4,
+  },
+  rarAmount: {
+    fontSize: 20,
+    fontFamily: "Helvetica-Bold",
+    color: "#ffffff",
+    marginBottom: 4,
+  },
+  rarMath: {
+    fontSize: 8,
+    color: "#9ca3af",
   },
 });
 
@@ -127,77 +156,112 @@ export default function AuditPdfDocument({
 }) {
   const dims = audit.dimension_scores as AuditDimensionScores | null;
   const score = audit.overall_score ?? 0;
-  const ctwaMetrics = (audit.metrics?.ctwaMetrics) as import("@/types/ctwa").CTWAMetrics | undefined;
+  const metrics = audit.metrics as Record<string, unknown> | null;
+  const ctwaMetrics = metrics?.ctwaMetrics as import("@/types/ctwa").CTWAMetrics | undefined;
+  const rar = metrics?.revenueAtRisk as RevenueAtRisk | undefined;
+
+  const r = 42;
+  const cx = 50;
+  const cy = 50;
+  const circumference = 2 * Math.PI * r;
+  const filled = (score / 100) * circumference;
+  const gap = circumference - filled;
 
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+
         {/* Header */}
         <Text style={styles.title}>{clientName}</Text>
         <Text style={styles.subtitle}>
           WhatsApp Business Audit — {audit.window_days}-day window
           {audit.completed_at
-            ? ` · ${new Date(audit.completed_at).toLocaleDateString()}`
+            ? `  ·  ${new Date(audit.completed_at).toLocaleDateString()}`
             : ""}
         </Text>
 
-        {/* Overall score */}
-        <View style={{ alignItems: "center", marginBottom: 20 }}>
+        {/* Revenue at Risk */}
+        {rar && rar.lostLeadPool > 0 && (
+          <View style={styles.rarBox}>
+            <Text style={styles.rarLabel}>REVENUE AT RISK</Text>
+            <Text style={styles.rarAmount}>
+              RM {rar.low.toLocaleString()} – RM {rar.high.toLocaleString()}
+            </Text>
+            <Text style={styles.rarMath}>{rar.math}</Text>
+          </View>
+        )}
+
+        {/* Overall score ring */}
+        <View style={{ alignItems: "center", marginBottom: 16 }}>
           <View style={{ width: 100, height: 100, position: "relative", alignItems: "center", justifyContent: "center" }}>
-            {(() => {
-              const r = 42;
-              const cx = 50;
-              const cy = 50;
-              const circumference = 2 * Math.PI * r;
-              const filled = (score / 100) * circumference;
-              const gap = circumference - filled;
-              return (
-                <Svg width="100" height="100" viewBox="0 0 100 100" style={{ position: "absolute", top: 0, left: 0 }}>
-                  <Circle cx={cx} cy={cy} r={r} fill="none" stroke="#2A2D36" strokeWidth="8" />
-                  <Circle
-                    cx={cx} cy={cy} r={r}
-                    fill="none"
-                    stroke={scoreColor(score)}
-                    strokeWidth="8"
-                    strokeDasharray={`${filled} ${gap}`}
-                    strokeLinecap="round"
-                    transform={`rotate(-90 ${cx} ${cy})`}
-                  />
-                </Svg>
-              );
-            })()}
+            <Svg width="100" height="100" viewBox="0 0 100 100" style={{ position: "absolute", top: 0, left: 0 }}>
+              <Circle cx={cx} cy={cy} r={r} fill="none" stroke="#2A2D36" strokeWidth="8" />
+              <Circle
+                cx={cx} cy={cy} r={r}
+                fill="none"
+                stroke={scoreColor(score)}
+                strokeWidth="8"
+                strokeDasharray={`${filled},${gap}`}
+                strokeLinecap="round"
+                transform={`rotate(-90 ${cx} ${cy})`}
+              />
+            </Svg>
             <Text style={[styles.scoreText, { color: scoreColor(score) }]}>{score}</Text>
           </View>
           <Text style={{ fontSize: 10, color: "#9ca3af" }}>Overall Score / 100</Text>
         </View>
 
-        {/* Dimensions */}
+        {/* Booking + drop-off summary */}
+        {(metrics?.bookingIntentCount !== undefined) && (
+          <>
+            <Text style={styles.sectionTitle}>Lead Conversion</Text>
+            <View style={styles.metaRow}>
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>Booking Intent</Text>
+                <Text style={styles.metaValue}>{String(metrics.bookingIntentCount ?? 0)}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>Confirmed</Text>
+                <Text style={[styles.metaValue, { color: "#10b981" }]}>{String(metrics.confirmedCount ?? 0)}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>Ghosted</Text>
+                <Text style={[styles.metaValue, { color: "#ef4444" }]}>{String(metrics.businessGhostCount ?? 0)}</Text>
+              </View>
+              <View style={styles.metaItem}>
+                <Text style={styles.metaLabel}>After Price</Text>
+                <Text style={[styles.metaValue, { color: "#f59e0b" }]}>{String(metrics.priceDropoffCount ?? 0)}</Text>
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* Dimension scores */}
         {dims && (
           <>
             <Text style={styles.sectionTitle}>Dimension Analysis</Text>
-            {(Object.keys(dims) as Array<keyof AuditDimensionScores>).map((k) => (
-              <View key={k} style={styles.dimRow}>
-                <Text style={styles.dimLabel}>{DIMENSION_LABELS[k]}</Text>
-                <Text
-                  style={[
-                    styles.dimScore,
-                    { color: scoreColor(dims[k].score) },
-                  ]}
-                >
-                  {dims[k].score}
-                </Text>
-                <Text style={styles.dimImpact}>{dims[k].businessImpact}</Text>
-              </View>
-            ))}
+            {(Object.keys(dims) as Array<keyof AuditDimensionScores>).map((k) => {
+              const weight = DIMENSION_WEIGHTS[k];
+              return (
+                <View key={k} style={styles.dimRow}>
+                  <Text style={styles.dimLabel}>{DIMENSION_LABELS[k]}</Text>
+                  {weight != null && (
+                    <Text style={styles.dimWeight}>{(weight * 100).toFixed(0)}%</Text>
+                  )}
+                  <Text style={[styles.dimScore, { color: scoreColor(dims[k].score) }]}>
+                    {dims[k].score}
+                  </Text>
+                  <Text style={styles.dimImpact}>{dims[k].businessImpact}</Text>
+                </View>
+              );
+            })}
           </>
         )}
 
         {/* CTWA summary */}
         {ctwaMetrics && (
           <>
-            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>
-              Paid Lead Performance
-            </Text>
+            <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Paid Lead Performance</Text>
             <View style={styles.metaRow}>
               <View style={styles.metaItem}>
                 <Text style={styles.metaLabel}>Total CTWA Convos</Text>
@@ -221,7 +285,7 @@ export default function AuditPdfDocument({
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text>G6 Labs Asia · Build smarter. Scale faster.</Text>
+          <Text>G6 Labs Asia  ·  Build smarter. Scale faster.</Text>
           <Text>Audit ID: {audit.id.slice(0, 8)}</Text>
         </View>
       </Page>
