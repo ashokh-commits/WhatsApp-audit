@@ -11,10 +11,16 @@ import {
   computeCTWAMetrics,
 } from "@/lib/ctwa";
 import { scoreAudit } from "@/lib/scoring";
+import {
+  analyzeChatContent,
+  aggregateContentAnalysis,
+  computeRevenueAtRisk,
+} from "@/lib/contentAnalysis";
 import { windowStart } from "@/lib/utils/time";
 import type { AuditMetrics } from "@/types/audit";
 import type { SanitizedMessage } from "@/types/evolution";
 import type { CTWAConversation } from "@/types/ctwa";
+import type { ChatAnalysis } from "@/lib/contentAnalysis";
 import type { Database } from "@/types/database";
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
@@ -54,7 +60,8 @@ async function setProgress(
 export async function runAuditJob(
   auditId: string,
   clientId: string,
-  windowDays: number
+  windowDays: number,
+  avgTicketValue: number = 0
 ): Promise<void> {
   const admin = createSupabaseAdminClient();
 
@@ -89,7 +96,17 @@ export async function runAuditJob(
     // ── 2. Fetch business profile ─────────────────────────────────────────────
     const businessProfile = await evolution.fetchBusinessProfile(client.instance_name);
 
-    // ── 3. Fetch chats ────────────────────────────────────────────────────────
+    // ── 3. Fetch avg ticket value (for revenue-at-risk) ───────────────────────
+    if (avgTicketValue === 0) {
+      const { data: clientFull } = await admin
+        .from("clients")
+        .select("avg_ticket_value")
+        .eq("id", clientId)
+        .single() as { data: { avg_ticket_value: number } | null; error: unknown };
+      if (clientFull) avgTicketValue = clientFull.avg_ticket_value ?? 0;
+    }
+
+    // ── 4. Fetch chats ────────────────────────────────────────────────────────
     await setProgress(auditId, "fetching_chats", 5);
     const sinceDate = windowStart(windowDays);
     const sinceTimestamp = Math.floor(sinceDate.getTime() / 1000);
@@ -100,9 +117,10 @@ export async function runAuditJob(
       return !lastTs || lastTs >= sinceTimestamp;
     });
 
-    // ── 4. Fetch messages per chat ────────────────────────────────────────────
+    // ── 5. Fetch messages per chat ────────────────────────────────────────────
     const allMessages: SanitizedMessage[] = [];
     const ctwaConversations: CTWAConversation[] = [];
+    const chatAnalyses: ChatAnalysis[] = [];
     const totalChats = allChats.length;
     let chatsProcessed = 0;
     let chatsFailed = 0;
@@ -114,6 +132,9 @@ export async function runAuditJob(
           chat.remoteJid,
           sinceTimestamp
         );
+        // Content analysis runs on raw messages before text is stripped
+        chatAnalyses.push(analyzeChatContent(chat.remoteJid, raw));
+
         const sanitized = sanitizeMessages(raw);
         allMessages.push(...sanitized);
 
@@ -141,7 +162,10 @@ export async function runAuditJob(
       hourlyActivity[new Date(msg.timestamp * 1000).getHours()]++;
     }
 
-    // ── 6. Fetch Meta ad rows for CTWA join ───────────────────────────────────
+    // ── 6. Aggregate content analysis ────────────────────────────────────────
+    const contentAnalysis = aggregateContentAnalysis(chatAnalyses);
+
+    // ── 7. Fetch Meta ad rows for CTWA join ───────────────────────────────────
     await setProgress(auditId, "scoring", 72);
     const { data: metaRows } = await admin
       .from("meta_ad_rows")
@@ -160,10 +184,25 @@ export async function runAuditJob(
         ? computeCTWAMetrics(matchedCTWA, metaRows ?? [], allChats.length)
         : null;
 
-    // ── 6. Score ──────────────────────────────────────────────────────────────
-    const auditScore = scoreAudit(allMessages, businessProfile, ctwaMetrics);
+    // ── 8. Score ──────────────────────────────────────────────────────────────
+    const auditScore = scoreAudit(allMessages, businessProfile, ctwaMetrics, contentAnalysis);
 
-    // ── 7. Save ───────────────────────────────────────────────────────────────
+    // ── 9. Revenue at risk ────────────────────────────────────────────────────
+    const unansweredCount =
+      (auditScore.dimensions.answerRate.rawMetric as { total?: number; answered?: number } | null)
+        ? (auditScore.dimensions.answerRate.rawMetric as { total: number; answered: number }).total -
+          (auditScore.dimensions.answerRate.rawMetric as { total: number; answered: number }).answered
+        : 0;
+    const revenueAtRisk =
+      avgTicketValue > 0
+        ? computeRevenueAtRisk(
+            unansweredCount,
+            contentAnalysis.engagedThenGhostedCount,
+            avgTicketValue
+          )
+        : null;
+
+    // ── 10. Save ───────────────────────────────────────────────────────────────
     await setProgress(auditId, "saving", 90);
 
     if (matchedCTWA.length > 0) {
@@ -191,6 +230,22 @@ export async function runAuditJob(
       windowDays,
       windowStart: sinceDate.toISOString(),
       windowEnd: new Date().toISOString(),
+      // Revenue Layer v2
+      bookingIntentCount: contentAnalysis.bookingIntentCount,
+      confirmedCount: contentAnalysis.confirmedCount,
+      bookingIntentRate:
+        contentAnalysis.inboundChats > 0
+          ? contentAnalysis.bookingIntentCount / contentAnalysis.inboundChats
+          : 0,
+      confirmedRate:
+        contentAnalysis.bookingIntentCount > 0
+          ? contentAnalysis.confirmedCount / contentAnalysis.bookingIntentCount
+          : 0,
+      businessGhostCount: contentAnalysis.businessGhostCount,
+      engagedThenGhostedCount: contentAnalysis.engagedThenGhostedCount,
+      priceDropoffCount: contentAnalysis.priceDropoffCount,
+      postIntentDropoffCount: contentAnalysis.postIntentDropoffCount,
+      revenueAtRisk: revenueAtRisk ?? undefined,
     };
 
     await admin.from("audits").update({

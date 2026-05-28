@@ -7,6 +7,7 @@ export interface Database {
           name: string;
           instance_name: string;
           instance_key_encrypted: string;
+          avg_ticket_value: number;
           created_at: string;
           created_by: string | null;
         };
@@ -15,6 +16,7 @@ export interface Database {
           name: string;
           instance_name: string;
           instance_key_encrypted: string;
+          avg_ticket_value?: number;
           created_at?: string;
           created_by?: string | null;
         };
@@ -23,6 +25,7 @@ export interface Database {
           name?: string;
           instance_name?: string;
           instance_key_encrypted?: string;
+          avg_ticket_value?: number;
           created_at?: string;
           created_by?: string | null;
         };

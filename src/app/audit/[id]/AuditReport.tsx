@@ -64,6 +64,7 @@ interface AuditRow {
 interface Props {
   audit: AuditRow;
   clientName: string;
+  avgTicketValue?: number;
   ctwaRows: Record<string, unknown>[];
   metaRows: Record<string, unknown>[];
 }
@@ -111,7 +112,9 @@ function DimensionCard({
       <div className="flex items-start justify-between gap-2">
         <div>
           <h3 className="font-heading text-sm font-semibold text-white">{label}</h3>
-          <p className="font-body text-xs text-gray-500">{(weight * 100).toFixed(0)}% weight</p>
+          {weight != null && (
+            <p className="font-body text-xs text-gray-500">{(weight * 100).toFixed(0)}% weight</p>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="font-heading text-2xl font-bold text-white">{result.score}</span>
@@ -135,10 +138,11 @@ function DimensionCard({
   );
 }
 
-export default function AuditReport({ audit, clientName, ctwaRows, metaRows }: Props) {
+export default function AuditReport({ audit, clientName, avgTicketValue = 0, ctwaRows, metaRows }: Props) {
   const dims = audit.dimension_scores as AuditDimensionScores | null;
   const metrics = audit.metrics as AuditMetrics | null;
   const score = audit.overall_score ?? 0;
+  const rar = metrics?.revenueAtRisk;
 
   if (!dims) return null;
 
@@ -152,7 +156,7 @@ export default function AuditReport({ audit, clientName, ctwaRows, metaRows }: P
       weight: DIMENSION_WEIGHTS[k],
       impact: dims[k].businessImpact,
       status: dims[k].status,
-      severity: (100 - dims[k].score) * DIMENSION_WEIGHTS[k],
+      severity: (100 - dims[k].score) * (DIMENSION_WEIGHTS[k] ?? 0),
     }))
     .filter((d) => d.score < 75)
     .sort((a, b) => b.severity - a.severity);
@@ -162,6 +166,50 @@ export default function AuditReport({ audit, clientName, ctwaRows, metaRows }: P
 
   return (
     <div className="space-y-8">
+
+      {/* ── Revenue at Risk Hero ───────────────────────────────────────────── */}
+      {rar && rar.lostLeadPool > 0 && (
+        <div className="rounded-2xl border border-g6-accent/40 bg-gradient-to-br from-g6-card via-g6-card to-[#1f0d00] p-5 md:p-6 glow-orange">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-body text-xs font-semibold uppercase tracking-widest text-g6-accent mb-1">
+                Revenue at Risk
+              </p>
+              <p className="font-heading text-3xl md:text-4xl font-bold text-white">
+                RM {rar.low.toLocaleString()}
+                <span className="text-gray-400 font-normal text-xl"> – </span>
+                RM {rar.high.toLocaleString()}
+              </p>
+              <p className="font-body text-sm text-gray-400 mt-1">{rar.math}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:flex md:gap-4 shrink-0">
+              <div className="rounded-xl bg-g6-surface border border-g6-border px-4 py-3 text-center">
+                <p className="font-heading text-2xl font-bold text-white">{rar.lostLeadPool}</p>
+                <p className="font-body text-xs text-gray-500 mt-0.5">Uncaptured Leads</p>
+              </div>
+              {avgTicketValue > 0 && (
+                <div className="rounded-xl bg-g6-surface border border-g6-border px-4 py-3 text-center">
+                  <p className="font-heading text-2xl font-bold text-white">RM {avgTicketValue.toLocaleString()}</p>
+                  <p className="font-body text-xs text-gray-500 mt-0.5">Avg Ticket Value</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── No avg_ticket_value nudge ──────────────────────────────────────── */}
+      {!rar && avgTicketValue === 0 && (metrics?.businessGhostCount ?? 0) + (dims.answerRate.rawMetric as { total?: number; answered?: number } | null
+        ? (dims.answerRate.rawMetric as { total: number; answered: number }).total -
+          (dims.answerRate.rawMetric as { total: number; answered: number }).answered
+        : 0) > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <p className="font-body text-sm text-amber-400">
+            <span className="font-semibold">Set an average ticket value</span> in your client profile to unlock the Revenue at Risk calculation.
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -231,6 +279,61 @@ export default function AuditReport({ audit, clientName, ctwaRows, metaRows }: P
           ))}
         </div>
       </div>
+
+      {/* Revenue Detail — Booking + Drop-off */}
+      {(metrics?.bookingIntentCount !== undefined || metrics?.businessGhostCount !== undefined) && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Lead → Booking */}
+          <Card className="flex flex-col gap-4">
+            <div>
+              <CardTitle>Lead → Booking Conversion</CardTitle>
+              <p className="font-body text-xs text-gray-500 mt-0.5">How many inbound chats moved toward a booking</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg bg-g6-surface border border-g6-border p-3 text-center">
+                <p className="font-heading text-xl font-bold text-white">{metrics?.bookingIntentCount ?? 0}</p>
+                <p className="font-body text-[10px] text-gray-500 mt-0.5">Intent</p>
+              </div>
+              <div className="rounded-lg bg-g6-surface border border-g6-border p-3 text-center">
+                <p className="font-heading text-xl font-bold text-emerald-400">{metrics?.confirmedCount ?? 0}</p>
+                <p className="font-body text-[10px] text-gray-500 mt-0.5">Confirmed</p>
+              </div>
+              <div className="rounded-lg bg-g6-surface border border-g6-border p-3 text-center">
+                <p className="font-heading text-xl font-bold text-white">
+                  {metrics?.bookingIntentCount
+                    ? ((( metrics.confirmedCount ?? 0) / metrics.bookingIntentCount) * 100).toFixed(0)
+                    : "—"}%
+                </p>
+                <p className="font-body text-[10px] text-gray-500 mt-0.5">Close Rate</p>
+              </div>
+            </div>
+            <p className="font-body text-xs text-gray-400">{dims.bookingConversion?.businessImpact}</p>
+          </Card>
+
+          {/* Drop-off / Ghosting */}
+          <Card className="flex flex-col gap-4">
+            <div>
+              <CardTitle>Drop-off &amp; Ghosting</CardTitle>
+              <p className="font-body text-xs text-gray-500 mt-0.5">Where leads fell through the cracks</p>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg bg-g6-surface border border-g6-border p-3 text-center">
+                <p className="font-heading text-xl font-bold text-red-400">{metrics?.businessGhostCount ?? 0}</p>
+                <p className="font-body text-[10px] text-gray-500 mt-0.5">Ghosted</p>
+              </div>
+              <div className="rounded-lg bg-g6-surface border border-g6-border p-3 text-center">
+                <p className="font-heading text-xl font-bold text-amber-400">{metrics?.priceDropoffCount ?? 0}</p>
+                <p className="font-body text-[10px] text-gray-500 mt-0.5">After Price</p>
+              </div>
+              <div className="rounded-lg bg-g6-surface border border-g6-border p-3 text-center">
+                <p className="font-heading text-xl font-bold text-amber-400">{metrics?.postIntentDropoffCount ?? 0}</p>
+                <p className="font-body text-[10px] text-gray-500 mt-0.5">After Intent</p>
+              </div>
+            </div>
+            <p className="font-body text-xs text-gray-400">{dims.dropoffGhosting?.businessImpact}</p>
+          </Card>
+        </div>
+      )}
 
       {/* Top Fixes */}
       {topFixes.length > 0 && (

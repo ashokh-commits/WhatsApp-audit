@@ -10,11 +10,13 @@ export interface DimensionResult {
 export interface AuditDimensionScores {
   responseSpeed: DimensionResult;
   answerRate: DimensionResult;
-  conversationCompletion: DimensionResult;
-  automation: DimensionResult;
-  profileCompleteness: DimensionResult;
+  bookingConversion: DimensionResult;
+  dropoffGhosting: DimensionResult;
   paidPerformance: DimensionResult;
   complianceHygiene: DimensionResult;
+  profileCompleteness: DimensionResult;
+  conversationCompletion: DimensionResult;
+  automation: DimensionResult;
 }
 
 export interface AuditScore {
@@ -22,22 +24,27 @@ export interface AuditScore {
   dimensions: AuditDimensionScores;
 }
 
-export const DIMENSION_WEIGHTS: Record<keyof AuditDimensionScores, number> = {
-  responseSpeed:          0.30,
+/** Weights used in overall score — must sum to 1.0 */
+export const DIMENSION_WEIGHTS: Partial<Record<keyof AuditDimensionScores, number>> = {
+  responseSpeed:          0.25,
   answerRate:             0.20,
-  conversationCompletion: 0.10,
-  automation:             0.10,
-  profileCompleteness:    0.10,
+  bookingConversion:      0.15,
+  dropoffGhosting:        0.10,
   paidPerformance:        0.10,
   complianceHygiene:      0.10,
+  profileCompleteness:    0.05,
+  conversationCompletion: 0.05,
+  // automation: excluded from weighted score (informational only)
 };
 
 export const DIMENSION_LABELS: Record<keyof AuditDimensionScores, string> = {
   responseSpeed:          "Response Speed",
   answerRate:             "Answer Rate",
-  conversationCompletion: "Conversation Completion",
-  automation:             "Automation",
-  profileCompleteness:    "Profile & Catalog Completeness",
+  bookingConversion:      "Lead → Booking Conversion",
+  dropoffGhosting:        "Drop-off / Ghosting",
   paidPerformance:        "Paid Conversation Performance",
   complianceHygiene:      "Compliance Hygiene",
+  profileCompleteness:    "Profile Completeness",
+  conversationCompletion: "Conversation Completion",
+  automation:             "Automation",
 };

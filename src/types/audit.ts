@@ -8,6 +8,14 @@ export interface AuditProgress {
   chatsTotal?: number;
 }
 
+export interface RevenueAtRisk {
+  lostLeadPool: number;
+  low: number;
+  high: number;
+  avgTicketValue: number;
+  math: string;
+}
+
 export interface AuditMetrics {
   progress?: AuditProgress;
   businessProfile?: Record<string, unknown>;
@@ -19,6 +27,16 @@ export interface AuditMetrics {
   windowStart?: string;
   windowEnd?: string;
   hourlyActivity?: number[];
+  // Revenue Layer v2
+  bookingIntentCount?: number;
+  confirmedCount?: number;
+  bookingIntentRate?: number;
+  confirmedRate?: number;
+  businessGhostCount?: number;
+  engagedThenGhostedCount?: number;
+  priceDropoffCount?: number;
+  postIntentDropoffCount?: number;
+  revenueAtRisk?: RevenueAtRisk;
 }
 
 export interface AuditRow {

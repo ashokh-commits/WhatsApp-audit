@@ -7,6 +7,7 @@ import type {
   DimensionStatus,
 } from "@/types/scoring";
 import type { CTWAMetrics } from "@/types/ctwa";
+import type { AggregatedContentAnalysis } from "@/lib/contentAnalysis";
 import { DIMENSION_WEIGHTS } from "@/types/scoring";
 import { median, isAfterHours } from "@/lib/utils/time";
 
@@ -395,11 +396,89 @@ export function computeComplianceHygiene(messages: SanitizedMessage[]): Dimensio
   };
 }
 
+export function computeBookingConversion(
+  analysis: AggregatedContentAnalysis | null
+): DimensionResult {
+  if (!analysis || analysis.inboundChats === 0) {
+    return {
+      score: 50,
+      rawMetric: { bookingIntentCount: 0, confirmedCount: 0, inboundChats: 0 },
+      status: "warning",
+      businessImpact: "No inbound conversations to measure booking conversion.",
+    };
+  }
+
+  const { inboundChats, bookingIntentCount, confirmedCount } = analysis;
+  const intentRate = bookingIntentCount / inboundChats;
+  const confirmedRate = bookingIntentCount > 0 ? confirmedCount / bookingIntentCount : 0;
+
+  // Score: 60% weight on intent rate, 40% on conversion rate
+  const score = Math.round(intentRate * 60 + confirmedRate * 40);
+
+  const businessImpact =
+    score >= 70
+      ? `${(intentRate * 100).toFixed(0)}% of inbound chats show booking intent; ${(confirmedRate * 100).toFixed(0)}% of those are confirmed — strong conversion pipeline.`
+      : intentRate >= 0.3
+      ? `${bookingIntentCount} chats show intent but only ${confirmedCount} confirmed (${(confirmedRate * 100).toFixed(0)}% close rate) — follow-up scripts could improve conversions.`
+      : `Only ${(intentRate * 100).toFixed(0)}% of chats show booking intent — conversations may not be qualifying leads effectively.`;
+
+  return {
+    score: Math.min(100, Math.max(0, score)),
+    rawMetric: { bookingIntentCount, confirmedCount, inboundChats, intentRate, confirmedRate },
+    status: status(score, 70, 40),
+    businessImpact,
+  };
+}
+
+export function computeDropoffGhosting(
+  analysis: AggregatedContentAnalysis | null
+): DimensionResult {
+  if (!analysis || analysis.inboundChats === 0) {
+    return {
+      score: 50,
+      rawMetric: { businessGhostCount: 0, inboundChats: 0 },
+      status: "warning",
+      businessImpact: "No inbound conversations to measure drop-off behaviour.",
+    };
+  }
+
+  const {
+    inboundChats, businessGhostCount, engagedThenGhostedCount,
+    priceDropoffCount, postIntentDropoffCount,
+  } = analysis;
+
+  const ghostRate = businessGhostCount / inboundChats;
+  // Engaged-then-ghosted (had at least one reply then went silent) is harder to justify
+  const engagedGhostPenalty = Math.round((engagedThenGhostedCount / inboundChats) * 20);
+  const rawScore = Math.round((1 - ghostRate) * 100);
+  const score = Math.max(0, rawScore - engagedGhostPenalty);
+
+  const worstStage =
+    postIntentDropoffCount >= priceDropoffCount ? "post-intent" : "post-price";
+
+  const businessImpact =
+    score >= 75
+      ? `Low drop-off — only ${businessGhostCount} of ${inboundChats} inbound chats went unanswered at the end.`
+      : score >= 50
+      ? `${businessGhostCount} chats ended without a business reply (${(ghostRate * 100).toFixed(0)}%). Most drop-offs after ${worstStage === "post-intent" ? "booking intent was shown" : "price inquiry"}.`
+      : `High ghosting rate: ${(ghostRate * 100).toFixed(0)}% of leads dropped off — ${engagedThenGhostedCount} had an initial reply but were never followed up.`;
+
+  return {
+    score,
+    rawMetric: {
+      businessGhostCount, engagedThenGhostedCount,
+      priceDropoffCount, postIntentDropoffCount, inboundChats, ghostRate,
+    },
+    status: status(score, 75, 50),
+    businessImpact,
+  };
+}
+
 export function computeOverallScore(dimensions: AuditDimensionScores): number {
   let total = 0;
   for (const [key, weight] of Object.entries(DIMENSION_WEIGHTS)) {
     const dim = dimensions[key as keyof AuditDimensionScores];
-    total += dim.score * weight;
+    if (dim) total += dim.score * weight;
   }
   return Math.round(total);
 }
@@ -407,16 +486,19 @@ export function computeOverallScore(dimensions: AuditDimensionScores): number {
 export function scoreAudit(
   messages: SanitizedMessage[],
   businessProfile: EvolutionBusinessProfile | null,
-  ctwaMetrics: CTWAMetrics | null
+  ctwaMetrics: CTWAMetrics | null,
+  contentAnalysis: AggregatedContentAnalysis | null = null
 ): AuditScore {
   const dimensions: AuditDimensionScores = {
     responseSpeed:          computeResponseSpeed(messages),
     answerRate:             computeAnswerRate(messages),
-    conversationCompletion: computeConversationCompletion(messages),
-    automation:             computeAutomation(messages),
-    profileCompleteness:    computeProfileCompleteness(businessProfile),
+    bookingConversion:      computeBookingConversion(contentAnalysis),
+    dropoffGhosting:        computeDropoffGhosting(contentAnalysis),
     paidPerformance:        computePaidPerformance(ctwaMetrics),
     complianceHygiene:      computeComplianceHygiene(messages),
+    profileCompleteness:    computeProfileCompleteness(businessProfile),
+    conversationCompletion: computeConversationCompletion(messages),
+    automation:             computeAutomation(messages),
   };
 
   return {

@@ -62,6 +62,23 @@ export default function NewClientForm() {
             Encrypted at rest with AES-256-GCM. Never stored in plaintext.
           </p>
         </div>
+        <div className="space-y-1">
+          <label htmlFor="avg_ticket_value" className="block text-sm font-medium text-gray-300 font-body">
+            Average Treatment / Ticket Value (RM)
+          </label>
+          <input
+            id="avg_ticket_value"
+            name="avg_ticket_value"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="e.g. 350"
+            className="w-full rounded-md border border-g6-border bg-g6-surface px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-g6-accent focus:outline-none focus:ring-1 focus:ring-g6-accent"
+          />
+          <p className="text-xs text-gray-500 font-body">
+            Used to calculate Revenue at Risk in audit reports. Leave blank if unknown.
+          </p>
+        </div>
 
         {error && (
           <p className="rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400 border border-red-500/20">

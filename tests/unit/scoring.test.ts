@@ -178,15 +178,17 @@ describe("computeOverallScore", () => {
     const dims = {
       responseSpeed:          { score: 100, rawMetric: null, status: "good" as const, businessImpact: "" },
       answerRate:             { score: 80,  rawMetric: null, status: "good" as const, businessImpact: "" },
+      bookingConversion:      { score: 65,  rawMetric: null, status: "warning" as const, businessImpact: "" },
+      dropoffGhosting:        { score: 75,  rawMetric: null, status: "good" as const, businessImpact: "" },
       conversationCompletion: { score: 60,  rawMetric: null, status: "warning" as const, businessImpact: "" },
       automation:             { score: 40,  rawMetric: null, status: "warning" as const, businessImpact: "" },
       profileCompleteness:    { score: 70,  rawMetric: null, status: "warning" as const, businessImpact: "" },
       paidPerformance:        { score: 50,  rawMetric: null, status: "warning" as const, businessImpact: "" },
       complianceHygiene:      { score: 30,  rawMetric: null, status: "critical" as const, businessImpact: "" },
     };
-    // 100*0.30 + 80*0.20 + 60*0.10 + 40*0.10 + 70*0.10 + 50*0.10 + 30*0.10
-    // = 30 + 16 + 6 + 4 + 7 + 5 + 3 = 71
-    expect(computeOverallScore(dims)).toBe(71);
+    // 100*0.25 + 80*0.20 + 65*0.15 + 75*0.10 + 50*0.10 + 30*0.10 + 70*0.05 + 60*0.05
+    // = 25 + 16 + 9.75 + 7.5 + 5 + 3 + 3.5 + 3 = 72.75 → 73
+    expect(computeOverallScore(dims)).toBe(73);
   });
 });
 

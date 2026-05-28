@@ -34,10 +34,10 @@ export default async function AuditPage({ params }: Props) {
 
   const { data: client } = await supabase
     .from("clients")
-    .select("name, instance_name")
+    .select("name, instance_name, avg_ticket_value")
     .eq("id", audit.client_id)
     .single() as {
-      data: Pick<ClientRow, "name" | "instance_name"> | null;
+      data: Pick<ClientRow, "name" | "instance_name" | "avg_ticket_value"> | null;
       error: unknown;
     };
 
@@ -83,6 +83,7 @@ export default async function AuditPage({ params }: Props) {
             <AuditReport
               audit={audit}
               clientName={client?.name ?? "Client"}
+              avgTicketValue={client?.avg_ticket_value ?? 0}
               ctwaRows={(ctwaRows ?? []) as Record<string, unknown>[]}
               metaRows={(metaRows ?? []) as Record<string, unknown>[]}
             />

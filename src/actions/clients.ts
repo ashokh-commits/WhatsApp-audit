@@ -12,6 +12,7 @@ export async function createClient(formData: FormData) {
   const name = formData.get("name") as string;
   const instanceName = formData.get("instance_name") as string;
   const instanceKey = formData.get("instance_key") as string;
+  const ticketRaw = formData.get("avg_ticket_value") as string | null;
 
   if (!name || !instanceName || !instanceKey) {
     return { error: "All fields are required." };
@@ -29,6 +30,7 @@ export async function createClient(formData: FormData) {
       name: name.trim(),
       instance_name: instanceName.trim(),
       instance_key_encrypted: encryptedKey,
+      avg_ticket_value: ticketRaw ? parseFloat(ticketRaw) || 0 : 0,
       created_by: user.id,
     };
 
@@ -68,10 +70,10 @@ export async function getClientWithAudit(clientId: string) {
 
   const { data: client, error: cErr } = await supabase
     .from("clients")
-    .select("id, name, instance_name, created_at")
+    .select("id, name, instance_name, avg_ticket_value, created_at")
     .eq("id", clientId)
     .single() as {
-      data: Pick<ClientRow, "id" | "name" | "instance_name" | "created_at"> | null;
+      data: Pick<ClientRow, "id" | "name" | "instance_name" | "avg_ticket_value" | "created_at"> | null;
       error: { message: string } | null;
     };
   if (cErr || !client) throw new Error(cErr?.message ?? "Client not found");
@@ -97,6 +99,7 @@ export async function getClientWithAudit(clientId: string) {
     id: client.id,
     name: client.name,
     instance_name: client.instance_name,
+    avg_ticket_value: client.avg_ticket_value,
     created_at: client.created_at,
     lastAudit: lastAudit ?? null,
     hasConsent: (count ?? 0) > 0,
