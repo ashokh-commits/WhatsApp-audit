@@ -181,18 +181,20 @@ export class EvolutionClient {
   }
 
   async verifyInstanceConnected(instanceName: string): Promise<boolean> {
-    const instances = await this.fetchInstances();
-    const found = instances.find(
-      (inst) => inst.instance.instanceName === instanceName
-    );
-    if (!found) return false;
-    if (found.instance.state !== "open") {
-      console.warn(
-        `Instance ${instanceName} is in state "${found.instance.state}" — skipping`
+    try {
+      const data = await this.request<{ instance?: { state?: string }; state?: string }>(
+        `/instance/connectionState/${instanceName}`
       );
+      const state = data?.instance?.state ?? data?.state;
+      if (state !== "open") {
+        console.warn(`Instance ${instanceName} is in state "${state}" — skipping`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn(`Could not verify instance ${instanceName}:`, err);
       return false;
     }
-    return true;
   }
 }
 
