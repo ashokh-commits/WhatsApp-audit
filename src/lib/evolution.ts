@@ -145,15 +145,26 @@ export class EvolutionClient {
       };
 
       const data = await this.request<
-        EvolutionMessage[] | { messages?: EvolutionMessage[] }
+        | EvolutionMessage[]
+        | { messages?: EvolutionMessage[] | { records?: EvolutionMessage[] } }
       >(ENDPOINTS.FIND_MESSAGES(instanceName), {
         method: "POST",
         body: JSON.stringify(body),
       });
 
-      const msgs = Array.isArray(data)
-        ? data
-        : (data as { messages?: EvolutionMessage[] }).messages ?? [];
+      let msgs: EvolutionMessage[];
+      if (Array.isArray(data)) {
+        msgs = data;
+      } else {
+        const inner = (data as { messages?: unknown }).messages;
+        if (Array.isArray(inner)) {
+          msgs = inner;
+        } else if (inner && typeof inner === "object" && Array.isArray((inner as { records?: unknown }).records)) {
+          msgs = (inner as { records: EvolutionMessage[] }).records;
+        } else {
+          msgs = [];
+        }
+      }
 
       allMessages.push(...msgs);
 
