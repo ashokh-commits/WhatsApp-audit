@@ -117,7 +117,8 @@ export class EvolutionClient {
 
   async findChats(instanceName: string): Promise<EvolutionChat[]> {
     const data = await this.request<EvolutionChat[] | { chats?: EvolutionChat[] }>(
-      ENDPOINTS.FIND_CHATS(instanceName)
+      ENDPOINTS.FIND_CHATS(instanceName),
+      { method: "POST", body: JSON.stringify({}) }
     );
     if (Array.isArray(data)) return data;
     return (data as { chats?: EvolutionChat[] }).chats ?? [];
