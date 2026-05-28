@@ -17,30 +17,35 @@ export async function createClient(formData: FormData) {
     return { error: "All fields are required." };
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: "Unauthorized." };
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: "Unauthorized." };
 
-  const encryptedKey = encrypt(instanceKey);
-  const admin = createSupabaseAdminClient();
+    const encryptedKey = encrypt(instanceKey);
+    const admin = createSupabaseAdminClient();
 
-  const insert: ClientInsert = {
-    name: name.trim(),
-    instance_name: instanceName.trim(),
-    instance_key_encrypted: encryptedKey,
-    created_by: user.id,
-  };
+    const insert: ClientInsert = {
+      name: name.trim(),
+      instance_name: instanceName.trim(),
+      instance_key_encrypted: encryptedKey,
+      created_by: user.id,
+    };
 
-  const { data, error } = await admin
-    .from("clients")
-    .insert(insert)
-    .select("id")
-    .single() as { data: Pick<ClientRow, "id"> | null; error: { message: string } | null };
+    const { data, error } = await admin
+      .from("clients")
+      .insert(insert)
+      .select("id")
+      .single() as { data: Pick<ClientRow, "id"> | null; error: { message: string } | null };
 
-  if (error) return { error: error.message };
+    if (error) return { error: error.message };
 
-  revalidatePath("/dashboard");
-  return { success: true, clientId: data!.id };
+    revalidatePath("/dashboard");
+    return { success: true, clientId: data!.id };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unexpected server error.";
+    return { error: message };
+  }
 }
 
 export async function listClients() {
