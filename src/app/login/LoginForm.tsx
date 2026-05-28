@@ -25,7 +25,7 @@ export default function LoginForm() {
     });
 
     if (authError) {
-      setError("Invalid email or password.");
+      setError(authError.message);
       setLoading(false);
       return;
     }
