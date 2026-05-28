@@ -8,14 +8,29 @@ import type { EvolutionMessage } from "@/types/evolution";
 
 // ── Keyword regexes ──────────────────────────────────────────────────────────
 
+/**
+ * Appointment / booking INTENT — checked on INBOUND messages only.
+ * Covers: asking to book, asking about slots, asking about free consultation,
+ * asking about availability, day/time references.
+ */
 export const BOOKING_RE =
-  /\b(book(?:ing)?|appointment|tempah|slot|available|availability|kosong|jadual|schedule|confirm(?:ed)?|reserve|reservation|tarikh|masa|esok|tomorrow|next\s+week|minggu\s+depan|isnin|selasa|rabu|khamis|jumaat|sabtu|ahad|monday|tuesday|wednesday|thursday|friday|saturday|sunday|bila|boleh\s+datang|nak\s+dtg)\b|预约|预定|订位|确认|时间|日期/i;
+  /\b(book(?:ing)?|appointment|consult(?:ation)?|tempah|slot|available|availability|kosong|jadual|schedule|reserve|reservation|tarikh|masa|esok|tomorrow|next\s+week|minggu\s+depan|isnin|selasa|rabu|khamis|jumaat|sabtu|ahad|monday|tuesday|wednesday|thursday|friday|saturday|sunday|bila|boleh\s+datang|nak\s+dtg|walk[\s-]?in|check[\s-]?up|rawatan|treatment|free\s+ke|free\s+tak|percuma|ada\s+slot|any\s+slot|still\s+open|still\s+available|nak\s+book|nak\s+dtg|nak\s+buat|bila\s+boleh|can\s+i\s+(?:book|come|visit|make)|how\s+to\s+(?:book|make))\b|预约|预定|订位|时间|日期|咨询|有空|空档/i;
 
 export const PRICE_RE =
   /\b(harga|berapa|price|cost|rate|fee|yuran|bayar(?:an)?|pakej|package|diskaun|promo(?:si)?|how\s+much|deposit|quotation|quot(?:e|ed)|payment|charge)\b|rm\s*\d+|价格|多少|费用|收费|优惠|套餐/i;
 
-export const CONFIRMATION_RE =
-  /\b(confirm(?:ed)?|booked?|see\s+you|see\s+u|noted|alright|all\s+good|done|dah\s+confirm|dah\s+book|okay|ok\b|baik|jumpa|selesai|beres|boleh|great|perfect|wonderful|terima\s+kasih|thanks?)\b|确认了|已预约|好的/i;
+/**
+ * Malaysian phone number — the strongest confirmation signal.
+ * Customer sharing their number = they intend to book.
+ */
+export const PHONE_RE = /(\+?6?0[1-9][0-9\s\-]{7,11})\b/;
+
+/**
+ * Time/date slot reference — secondary confirmation signal.
+ * "10am", "3pm", "pagi", "petang", "Jumaat", specific date mentions.
+ */
+export const TIME_SLOT_RE =
+  /\b(\d{1,2}[:\.]?\d{0,2}\s*(?:am|pm|pagi|petang|malam|tengahari)|[0-2]?\d:[0-5]\d|pagi|petang|malam|esok|tomorrow|isnin|selasa|rabu|khamis|jumaat|sabtu|ahad|monday|tuesday|wednesday|thursday|friday|saturday|sunday|minggu\s+depan|next\s+week|\d{1,2}\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))\b/i;
 
 /** Conservative and optimistic close-rate assumptions (visible to users) */
 export const CLOSE_RATE = { conservative: 0.20, optimistic: 0.40 };
@@ -25,8 +40,8 @@ export const CLOSE_RATE = { conservative: 0.20, optimistic: 0.40 };
 export interface ChatAnalysis {
   remoteJid: string;
   inboundInitiated: boolean;
-  hasBookingIntent: boolean;
-  isConfirmed: boolean;
+  hasBookingIntent: boolean;  // inbound customer asked about booking/appointment
+  isConfirmed: boolean;       // inbound customer sent phone number (+ ideally time)
   hasPriceDiscussion: boolean;
   isBusinessGhosted: boolean;
   hadAnyBusinessReply: boolean;
@@ -71,18 +86,40 @@ export function analyzeChatContent(
   let hasPriceDiscussion = false;
   let priceIdx = -1;
   let intentIdx = -1;
+  let businessHasReplied = false;
 
   for (let i = 0; i < sorted.length; i++) {
-    const text = getText(sorted[i]);
-    if (PRICE_RE.test(text) && priceIdx === -1) priceIdx = i;
-    if (BOOKING_RE.test(text) && intentIdx === -1) intentIdx = i;
-    if (PRICE_RE.test(text)) hasPriceDiscussion = true;
-    if (BOOKING_RE.test(text)) hasBookingIntent = true;
-    if (sorted[i].key.fromMe && CONFIRMATION_RE.test(text)) isConfirmed = true;
+    const msg = sorted[i];
+    const text = getText(msg);
+    const isInbound = !msg.key.fromMe;
+
+    if (!isInbound) {
+      businessHasReplied = true;
+    }
+
+    // Price discussion — either side can mention price
+    if (PRICE_RE.test(text)) {
+      hasPriceDiscussion = true;
+      if (priceIdx === -1) priceIdx = i;
+    }
+
+    // Booking intent — inbound messages ONLY
+    if (isInbound && BOOKING_RE.test(text)) {
+      hasBookingIntent = true;
+      if (intentIdx === -1) intentIdx = i;
+    }
+
+    // Confirmed — inbound message with a phone number, sent after business has replied.
+    // Phone number = customer is giving their contact details to book.
+    // Also require a time/slot reference in the same message or anywhere inbound
+    // after the first business reply (covers multi-message detail sharing).
+    if (isInbound && businessHasReplied && PHONE_RE.test(text)) {
+      isConfirmed = true;
+    }
   }
 
   const isBusinessGhosted = !lastMsg.key.fromMe;
-  const hadAnyBusinessReply = sorted.some((m) => m.key.fromMe);
+  const hadAnyBusinessReply = businessHasReplied;
 
   // Drop-off stage (relevant only when business ghosted)
   let dropoffStage: ChatAnalysis["dropoffStage"] = "other";
@@ -167,7 +204,7 @@ export interface RevenueAtRisk {
 
 /**
  * De-duped lost-lead pool:
- * - unansweredCount   = never got any business reply (from answerRate)
+ * - unansweredCount    = never got any business reply (from answerRate)
  * - engagedThenGhosted = had a reply but business went silent (not in above)
  * These two sets are mutually exclusive so no double-counting.
  */
