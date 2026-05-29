@@ -97,7 +97,7 @@ export default function ClientCard({ client }: { client: Client }) {
         <div className="flex items-center gap-2">
           <Badge status={client.lastAudit.status as "pending" | "running" | "complete" | "failed"} />
           <span className="font-body text-xs text-gray-500">
-            {new Date(client.lastAudit.created_at).toLocaleDateString()}
+            {new Date(client.lastAudit.created_at).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}
           </span>
           {client.lastAudit.status === "complete" && (
             <Link

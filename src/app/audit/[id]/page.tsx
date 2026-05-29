@@ -5,6 +5,7 @@ import TopBar from "@/components/layout/TopBar";
 import Footer from "@/components/layout/Footer";
 import AuditProgressModal from "./AuditProgressModal";
 import AuditReport from "./AuditReport";
+import RetryAuditButton from "./RetryAuditButton";
 import type { Database } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -70,13 +71,16 @@ export default async function AuditPage({ params }: Props) {
             />
           )}
           {audit.status === "failed" && (
-            <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
-              <p className="font-heading text-sm font-semibold text-red-400">
-                Audit failed
-              </p>
-              <p className="mt-1 font-body text-sm text-gray-400">
-                {audit.error_message ?? "An unknown error occurred."}
-              </p>
+            <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="font-heading text-sm font-semibold text-red-400">
+                  Audit failed
+                </p>
+                <p className="mt-1 font-body text-sm text-gray-400">
+                  {audit.error_message ?? "An unknown error occurred."}
+                </p>
+              </div>
+              <RetryAuditButton clientId={audit.client_id} windowDays={audit.window_days} />
             </div>
           )}
           {audit.status === "complete" && (
