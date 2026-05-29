@@ -19,11 +19,11 @@ export async function GET(_req: Request, { params }: Params) {
 
   const { data: audit, error } = await supabase
     .from("audits")
-    .select("id, client_id, window_days, overall_score, dimension_scores, metrics, created_at, completed_at")
+    .select("id, client_id, window_days, overall_score, dimension_scores, metrics, status, created_at, completed_at")
     .eq("id", params.id)
     .single() as { data: AuditRow | null; error: { message: string } | null };
 
-  if (error || !audit || audit.status !== "complete") {
+  if (error || !audit) {
     notFound();
   }
 
