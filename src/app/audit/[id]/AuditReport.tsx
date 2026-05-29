@@ -177,9 +177,9 @@ export default function AuditReport({ audit, clientName, avgTicketValue = 0, ctw
                 Revenue at Risk
               </p>
               <p className="font-heading text-3xl md:text-4xl font-bold text-white">
-                RM {rar.low.toLocaleString()}
+                RM {rar.low.toLocaleString("en-MY")}
                 <span className="text-gray-400 font-normal text-xl"> – </span>
-                RM {rar.high.toLocaleString()}
+                RM {rar.high.toLocaleString("en-MY")}
               </p>
               <p className="font-body text-sm text-gray-400 mt-1">{rar.math}</p>
             </div>
@@ -190,7 +190,7 @@ export default function AuditReport({ audit, clientName, avgTicketValue = 0, ctw
               </div>
               {avgTicketValue > 0 && (
                 <div className="rounded-xl bg-g6-surface border border-g6-border px-4 py-3 text-center">
-                  <p className="font-heading text-2xl font-bold text-white">RM {avgTicketValue.toLocaleString()}</p>
+                  <p className="font-heading text-2xl font-bold text-white">RM {avgTicketValue.toLocaleString("en-MY")}</p>
                   <p className="font-body text-xs text-gray-500 mt-0.5">Avg Ticket Value</p>
                 </div>
               )}
@@ -218,7 +218,7 @@ export default function AuditReport({ audit, clientName, avgTicketValue = 0, ctw
           <p className="font-body text-sm text-gray-400">
             {audit.window_days}-day audit window ending{" "}
             {audit.completed_at
-              ? new Date(audit.completed_at).toLocaleDateString()
+              ? new Date(audit.completed_at).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })
               : "—"}
           </p>
           <p className="font-body text-xs text-gray-500 mt-1">

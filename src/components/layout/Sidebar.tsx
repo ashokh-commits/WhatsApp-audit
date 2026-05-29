@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 const navItems = [
@@ -16,15 +15,10 @@ export default function Sidebar() {
 
   return (
     <aside className="hidden md:flex h-screen w-56 flex-col border-r border-g6-border bg-[#0A0A0A]">
-      <div className="flex h-16 items-center border-b border-g6-border px-4">
-        <Image
-          src="/G6-White.png"
-          alt="G6 Labs"
-          width={80}
-          height={32}
-          className="object-contain"
-          priority
-        />
+      <div className="flex h-16 items-center border-b border-g6-border px-4 gap-2">
+        {/* G6-White.png — add file to /public to replace this text logo */}
+        <span className="font-heading text-lg font-bold text-white leading-none">G6</span>
+        <span className="font-body text-sm text-g6-accent font-semibold leading-none">Labs</span>
       </div>
 
       <nav className="flex-1 space-y-0.5 px-2 py-4">
