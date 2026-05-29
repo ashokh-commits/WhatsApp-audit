@@ -20,6 +20,8 @@ export interface AuditMetrics {
   progress?: AuditProgress;
   businessProfile?: Record<string, unknown>;
   chatCount?: number;
+  chatsInWindow?: number;  // total chats within the window (may exceed chatCount if partial)
+  partial?: boolean;       // true when time budget ran out before all chats were fetched
   ctwaConversationCount?: number;
   coveragePct?: number;
   ctwaMetrics?: CTWAMetrics;

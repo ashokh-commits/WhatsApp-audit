@@ -32,6 +32,15 @@ type AuditUpdate = Database["public"]["Tables"]["audits"]["Update"];
 const BATCH_SIZE = 6;
 const INTER_BATCH_DELAY_MS = 400;
 
+// Stop fetching chats with this many milliseconds remaining before the function
+// is killed by the host. Remaining time is used for scoring + saving.
+// Default 45 s is safe for Vercel Hobby (60 s limit).
+// Set AUDIT_SOFT_DEADLINE_MS=260000 in env for Vercel Pro (300 s limit).
+const SOFT_DEADLINE_MS = parseInt(
+  process.env.AUDIT_SOFT_DEADLINE_MS ?? "45000",
+  10
+);
+
 const PROGRESS_STAGES: Record<string, string> = {
   decrypting:         "Connecting to WhatsApp instance...",
   fetching_chats:     "Loading conversation list...",
@@ -68,6 +77,7 @@ export async function runAuditJob(
   avgTicketValue: number = 0
 ): Promise<void> {
   const admin = createSupabaseAdminClient();
+  const startTime = Date.now();
 
   try {
     await admin
@@ -121,15 +131,26 @@ export async function runAuditJob(
       return !lastTs || lastTs >= sinceTimestamp;
     });
 
-    // ── 5. Fetch messages per chat (batched parallel) ─────────────────────────
+    // ── 5. Fetch messages per chat (batched parallel, time-budgeted) ─────────
     const allMessages: SanitizedMessage[] = [];
     const ctwaConversations: CTWAConversation[] = [];
     const chatAnalyses: ChatAnalysis[] = [];
     const totalChats = allChats.length;
     let chatsProcessed = 0;
     let chatsFailed = 0;
+    let partial = false;
 
     for (let batchStart = 0; batchStart < totalChats; batchStart += BATCH_SIZE) {
+      // Stop fetching if we are close to the function timeout.
+      // Whatever we have so far will be scored and saved as a partial report.
+      if (Date.now() - startTime >= SOFT_DEADLINE_MS) {
+        partial = true;
+        console.warn(
+          `Soft deadline reached after ${chatsProcessed}/${totalChats} chats — saving partial report.`
+        );
+        break;
+      }
+
       const batch = allChats.slice(batchStart, batchStart + BATCH_SIZE);
 
       const settled = await Promise.allSettled(
@@ -238,7 +259,9 @@ export async function runAuditJob(
 
     const finalMetrics: AuditMetrics = {
       businessProfile: businessProfile as Record<string, unknown> | undefined,
-      chatCount: allChats.length,
+      chatCount: chatsProcessed,
+      chatsInWindow: totalChats,
+      partial: partial || undefined,
       ctwaConversationCount: matchedCTWA.length,
       coveragePct: ctwaMetrics?.coveragePct ?? 0,
       ctwaMetrics: ctwaMetrics ?? undefined,

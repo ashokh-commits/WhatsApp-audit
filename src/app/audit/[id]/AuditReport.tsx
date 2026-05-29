@@ -211,6 +211,20 @@ export default function AuditReport({ audit, clientName, avgTicketValue = 0, ctw
         </div>
       )}
 
+      {/* Partial report banner */}
+      {metrics?.partial && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <p className="font-heading text-sm font-semibold text-amber-400">Partial report</p>
+            <p className="font-body text-xs text-gray-400 mt-0.5">
+              {metrics.chatCount} of {metrics.chatsInWindow} conversations analysed before the time limit.
+              Scores are accurate for the data collected — re-run for full coverage.
+            </p>
+          </div>
+          <ExportButton auditId={audit.id} />
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -222,7 +236,7 @@ export default function AuditReport({ audit, clientName, avgTicketValue = 0, ctw
               : "—"}
           </p>
           <p className="font-body text-xs text-gray-500 mt-1">
-            {metrics?.chatCount ?? 0} conversations analysed
+            {metrics?.chatCount ?? 0}{metrics?.chatsInWindow && metrics.chatsInWindow > (metrics.chatCount ?? 0) ? ` of ${metrics.chatsInWindow}` : ""} conversations analysed
             {metrics?.ctwaConversationCount
               ? ` · ${metrics.ctwaConversationCount} CTWA`
               : ""}
