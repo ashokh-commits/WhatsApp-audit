@@ -3,7 +3,6 @@ import { decrypt } from "@/lib/crypto";
 import {
   createInstanceEvolutionClient,
   sanitizeMessages,
-  RATE_LIMIT_DELAY_MS,
 } from "@/lib/evolution";
 import {
   extractCTWAConversations,
@@ -27,6 +26,11 @@ type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
 type MetaAdRow = Database["public"]["Tables"]["meta_ad_rows"]["Row"];
 type CTWAInsert = Database["public"]["Tables"]["ctwa_conversations"]["Insert"];
 type AuditUpdate = Database["public"]["Tables"]["audits"]["Update"];
+
+// Fetch N chats concurrently; one inter-batch delay replaces N per-chat delays.
+// Keep concurrent count low enough not to flood a self-hosted Evolution instance.
+const BATCH_SIZE = 6;
+const INTER_BATCH_DELAY_MS = 400;
 
 const PROGRESS_STAGES: Record<string, string> = {
   decrypting:         "Connecting to WhatsApp instance...",
@@ -117,7 +121,7 @@ export async function runAuditJob(
       return !lastTs || lastTs >= sinceTimestamp;
     });
 
-    // ── 5. Fetch messages per chat ────────────────────────────────────────────
+    // ── 5. Fetch messages per chat (batched parallel) ─────────────────────────
     const allMessages: SanitizedMessage[] = [];
     const ctwaConversations: CTWAConversation[] = [];
     const chatAnalyses: ChatAnalysis[] = [];
@@ -125,35 +129,47 @@ export async function runAuditJob(
     let chatsProcessed = 0;
     let chatsFailed = 0;
 
-    for (const chat of allChats) {
-      try {
-        const raw = await evolution.findMessages(
-          client.instance_name,
-          chat.remoteJid,
-          sinceTimestamp
-        );
-        // Content analysis runs on raw messages before text is stripped
-        chatAnalyses.push(analyzeChatContent(chat.remoteJid, raw));
+    for (let batchStart = 0; batchStart < totalChats; batchStart += BATCH_SIZE) {
+      const batch = allChats.slice(batchStart, batchStart + BATCH_SIZE);
 
-        const sanitized = sanitizeMessages(raw);
-        allMessages.push(...sanitized);
+      const settled = await Promise.allSettled(
+        batch.map(async (chat) => {
+          const raw = await evolution.findMessages(
+            client.instance_name,
+            chat.remoteJid,
+            sinceTimestamp
+          );
+          // Content analysis runs on raw messages before text is stripped
+          const analysis = analyzeChatContent(chat.remoteJid, raw);
+          const sanitized = sanitizeMessages(raw);
+          const ctwa = extractCTWAConversations(sanitized);
+          return { analysis, sanitized, ctwa };
+        })
+      );
 
-        const ctwa = extractCTWAConversations(sanitized);
-        ctwaConversations.push(...ctwa);
-      } catch (err) {
-        chatsFailed++;
-        console.warn(`Failed to fetch messages for ${chat.remoteJid}:`, err);
+      for (const result of settled) {
+        if (result.status === "fulfilled") {
+          const { analysis, sanitized, ctwa } = result.value;
+          chatAnalyses.push(analysis);
+          allMessages.push(...sanitized);
+          ctwaConversations.push(...ctwa);
+        } else {
+          chatsFailed++;
+          console.warn("Failed to fetch chat batch entry:", result.reason);
+        }
       }
 
-      chatsProcessed++;
+      chatsProcessed += batch.length;
       const pct = 5 + Math.round((chatsProcessed / totalChats) * 65);
-      if (chatsProcessed % 5 === 0 || chatsProcessed === totalChats) {
-        await setProgress(auditId, "fetching_messages", pct, {
-          chatsProcessed,
-          chatsTotal: totalChats,
-        });
+      await setProgress(auditId, "fetching_messages", pct, {
+        chatsProcessed,
+        chatsTotal: totalChats,
+      });
+
+      // Throttle between batches; skip delay after the last batch
+      if (batchStart + BATCH_SIZE < totalChats) {
+        await delay(INTER_BATCH_DELAY_MS);
       }
-      await delay(RATE_LIMIT_DELAY_MS);
     }
 
     // ── 5. Compute hourly activity distribution ───────────────────────────────
