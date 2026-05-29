@@ -16,10 +16,10 @@ h1, h2, h3, h4, h5, h6 {
   font-family: "Trebuchet MS", ui-sans-serif, system-ui, sans-serif;
 }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: #0A0A0A; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #FF4500; }
+::-webkit-scrollbar-thumb { background: #FF4500; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #FF6A00; }
 
 @layer utilities {
   .text-balance { text-wrap: balance; }

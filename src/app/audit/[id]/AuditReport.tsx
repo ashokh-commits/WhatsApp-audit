@@ -105,6 +105,7 @@ function DimensionCard({
   result: AuditDimensionScores[typeof dimKey];
 }) {
   const weight = DIMENSION_WEIGHTS[dimKey];
+  const weightPct = typeof weight === "number" && isFinite(weight) ? Math.round(weight * 100) : null;
   const label = DIMENSION_LABELS[dimKey];
 
   return (
@@ -112,8 +113,8 @@ function DimensionCard({
       <div className="flex items-start justify-between gap-2">
         <div>
           <h3 className="font-heading text-sm font-semibold text-white">{label}</h3>
-          {weight != null && (
-            <p className="font-body text-xs text-gray-500">{(weight * 100).toFixed(0)}% weight</p>
+          {weightPct != null && weightPct > 0 && (
+            <p className="font-body text-xs text-gray-500">{weightPct}% weight</p>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
