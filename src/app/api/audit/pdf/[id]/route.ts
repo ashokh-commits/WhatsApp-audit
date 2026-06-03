@@ -1,4 +1,4 @@
-import { getSession } from "@/lib/auth";
+import { getSession } from "@/lib/auth/server";
 import { queryOne } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { renderToBuffer } from "@react-pdf/renderer";

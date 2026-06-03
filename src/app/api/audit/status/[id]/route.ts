@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession } from "@/lib/auth/server";
 import { query, queryOne } from "@/lib/db";
 import type { Database } from "@/types/database";
 

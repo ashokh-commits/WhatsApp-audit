@@ -1,6 +1,6 @@
 "use server";
 
-import { getSession } from "@/lib/auth";
+import { getSession } from "@/lib/auth/server";
 import { query, queryOne } from "@/lib/db";
 import { applyMapping } from "@/lib/utils/parseSpreadsheet";
 import type { ColumnMapping } from "@/types/ctwa";

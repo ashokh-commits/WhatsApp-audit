@@ -5,7 +5,7 @@ import {
   createSessionToken,
   setSessionCookie,
   verifyPassword,
-} from "@/lib/auth";
+} from "@/lib/auth/server";
 
 export async function login(
   email: string,

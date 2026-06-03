@@ -1,7 +1,7 @@
 "use server";
 
 import { encrypt } from "@/lib/crypto";
-import { getSession } from "@/lib/auth";
+import { getSession } from "@/lib/auth/server";
 import { query, queryOne } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import type { Database } from "@/types/database";

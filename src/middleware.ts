@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getSessionFromRequest } from "@/lib/auth";
+import { getSessionFromRequest } from "@/lib/auth/session";
 
 export async function middleware(request: NextRequest) {
   if (!process.env.SESSION_SECRET) {
