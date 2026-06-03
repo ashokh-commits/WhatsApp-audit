@@ -1,4 +1,4 @@
-import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
+import { query, queryOne } from "@/lib/db";
 import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
 import Footer from "@/components/layout/Footer";
@@ -22,36 +22,26 @@ interface ClientWithLastAudit {
 }
 
 async function getClientsWithAudits(): Promise<ClientWithLastAudit[]> {
-  const supabase = await createSupabaseServerClient();
-  const { data: clients, error } = await supabase
-    .from("clients")
-    .select("id, name, instance_name, created_at")
-    .order("created_at", { ascending: false }) as {
-      data: Array<Pick<ClientRow, "id" | "name" | "instance_name" | "created_at">> | null;
-      error: unknown;
-    };
-
-  if (error || !clients) return [];
-
-  const admin = createSupabaseAdminClient();
+  const clients = await query<
+    Pick<ClientRow, "id" | "name" | "instance_name" | "created_at">
+  >(
+    `SELECT id, name, instance_name, created_at FROM clients ORDER BY created_at DESC`
+  );
 
   return Promise.all(
     clients.map(async (client) => {
-      const { data: lastAudit } = await admin
-        .from("audits")
-        .select("id, overall_score, status, created_at")
-        .eq("client_id", client.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single() as {
-          data: Pick<AuditRow, "id" | "overall_score" | "status" | "created_at"> | null;
-          error: unknown;
-        };
+      const lastAudit = await queryOne<
+        Pick<AuditRow, "id" | "overall_score" | "status" | "created_at">
+      >(
+        `SELECT id, overall_score, status, created_at FROM audits
+         WHERE client_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [client.id]
+      );
 
-      const { count } = await admin
-        .from("consent_records")
-        .select("id", { count: "exact", head: true })
-        .eq("client_id", client.id);
+      const consent = await queryOne<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM consent_records WHERE client_id = $1`,
+        [client.id]
+      );
 
       return {
         id: client.id,
@@ -59,7 +49,7 @@ async function getClientsWithAudits(): Promise<ClientWithLastAudit[]> {
         instance_name: client.instance_name,
         created_at: client.created_at,
         lastAudit: lastAudit ?? null,
-        hasConsent: (count ?? 0) > 0,
+        hasConsent: parseInt(consent?.count ?? "0", 10) > 0,
       };
     })
   );

@@ -1,4 +1,4 @@
-import { createSupabaseAdminClient } from "@/lib/supabase/server";
+import { query, queryOne, getPool } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import {
   createInstanceEvolutionClient,
@@ -24,29 +24,21 @@ import type { Database } from "@/types/database";
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
 type MetaAdRow = Database["public"]["Tables"]["meta_ad_rows"]["Row"];
-type CTWAInsert = Database["public"]["Tables"]["ctwa_conversations"]["Insert"];
-type AuditUpdate = Database["public"]["Tables"]["audits"]["Update"];
 
-// Fetch N chats concurrently; one inter-batch delay replaces N per-chat delays.
-// Keep concurrent count low enough not to flood a self-hosted Evolution instance.
 const BATCH_SIZE = 6;
 const INTER_BATCH_DELAY_MS = 400;
 
-// Stop fetching chats with this many milliseconds remaining before the function
-// is killed by the host. Remaining time is used for scoring + saving.
-// Default 45 s is safe for Vercel Hobby (60 s limit).
-// Set AUDIT_SOFT_DEADLINE_MS=260000 in env for Vercel Pro (300 s limit).
 const SOFT_DEADLINE_MS = parseInt(
-  process.env.AUDIT_SOFT_DEADLINE_MS ?? "45000",
+  process.env.AUDIT_SOFT_DEADLINE_MS ?? "600000",
   10
 );
 
 const PROGRESS_STAGES: Record<string, string> = {
-  decrypting:         "Connecting to WhatsApp instance...",
-  fetching_chats:     "Loading conversation list...",
-  fetching_messages:  "Reading messages...",
-  scoring:            "Calculating scores...",
-  saving:             "Saving report...",
+  decrypting: "Connecting to WhatsApp instance...",
+  fetching_chats: "Loading conversation list...",
+  fetching_messages: "Reading messages...",
+  scoring: "Calculating scores...",
+  saving: "Saving report...",
 };
 
 async function delay(ms: number) {
@@ -59,15 +51,17 @@ async function setProgress(
   pct: number,
   extra?: Record<string, unknown>
 ) {
-  const admin = createSupabaseAdminClient();
-  await admin
-    .from("audits")
-    .update({
-      metrics: {
-        progress: { stage, pct, stageLabel: PROGRESS_STAGES[stage] ?? stage, ...extra },
-      },
-    } as AuditUpdate)
-    .eq("id", auditId);
+  const progress = {
+    stage,
+    pct,
+    stageLabel: PROGRESS_STAGES[stage] ?? stage,
+    ...extra,
+  };
+  await query(
+    `UPDATE audits SET metrics = COALESCE(metrics, '{}'::jsonb) || jsonb_build_object('progress', $1::jsonb)
+     WHERE id = $2`,
+    [JSON.stringify(progress), auditId]
+  );
 }
 
 export async function runAuditJob(
@@ -76,26 +70,19 @@ export async function runAuditJob(
   windowDays: number,
   avgTicketValue: number = 0
 ): Promise<void> {
-  const admin = createSupabaseAdminClient();
   const startTime = Date.now();
 
   try {
-    await admin
-      .from("audits")
-      .update({ status: "running" } as AuditUpdate)
-      .eq("id", auditId);
+    await query(`UPDATE audits SET status = 'running' WHERE id = $1`, [auditId]);
 
-    // ── 1. Decrypt instance key ───────────────────────────────────────────────
     await setProgress(auditId, "decrypting", 2);
-    const { data: client, error: cErr } = await admin
-      .from("clients")
-      .select("instance_name, instance_key_encrypted")
-      .eq("id", clientId)
-      .single() as {
-        data: Pick<ClientRow, "instance_name" | "instance_key_encrypted"> | null;
-        error: { message: string } | null;
-      };
-    if (cErr || !client) throw new Error("Client not found.");
+    const client = await queryOne<
+      Pick<ClientRow, "instance_name" | "instance_key_encrypted">
+    >(
+      `SELECT instance_name, instance_key_encrypted FROM clients WHERE id = $1`,
+      [clientId]
+    );
+    if (!client) throw new Error("Client not found.");
 
     const instanceKey = decrypt(client.instance_key_encrypted);
     const evolution = createInstanceEvolutionClient(instanceKey);
@@ -107,20 +94,16 @@ export async function runAuditJob(
       );
     }
 
-    // ── 2. Fetch business profile ─────────────────────────────────────────────
     const businessProfile = await evolution.fetchBusinessProfile(client.instance_name);
 
-    // ── 3. Fetch avg ticket value (for revenue-at-risk) ───────────────────────
     if (avgTicketValue === 0) {
-      const { data: clientFull } = await admin
-        .from("clients")
-        .select("avg_ticket_value")
-        .eq("id", clientId)
-        .single() as { data: { avg_ticket_value: number } | null; error: unknown };
-      if (clientFull) avgTicketValue = clientFull.avg_ticket_value ?? 0;
+      const ticketRow = await queryOne<{ avg_ticket_value: string }>(
+        `SELECT avg_ticket_value FROM clients WHERE id = $1`,
+        [clientId]
+      );
+      if (ticketRow) avgTicketValue = parseFloat(ticketRow.avg_ticket_value) || 0;
     }
 
-    // ── 4. Fetch chats ────────────────────────────────────────────────────────
     await setProgress(auditId, "fetching_chats", 5);
     const sinceDate = windowStart(windowDays);
     const sinceTimestamp = Math.floor(sinceDate.getTime() / 1000);
@@ -131,7 +114,6 @@ export async function runAuditJob(
       return !lastTs || lastTs >= sinceTimestamp;
     });
 
-    // ── 5. Fetch messages per chat (batched parallel, time-budgeted) ─────────
     const allMessages: SanitizedMessage[] = [];
     const ctwaConversations: CTWAConversation[] = [];
     const chatAnalyses: ChatAnalysis[] = [];
@@ -141,8 +123,6 @@ export async function runAuditJob(
     let partial = false;
 
     for (let batchStart = 0; batchStart < totalChats; batchStart += BATCH_SIZE) {
-      // Stop fetching if we are close to the function timeout.
-      // Whatever we have so far will be scored and saved as a partial report.
       if (Date.now() - startTime >= SOFT_DEADLINE_MS) {
         partial = true;
         console.warn(
@@ -160,7 +140,6 @@ export async function runAuditJob(
             chat.remoteJid,
             sinceTimestamp
           );
-          // Content analysis runs on raw messages before text is stripped
           const analysis = analyzeChatContent(chat.remoteJid, raw);
           const sanitized = sanitizeMessages(raw);
           const ctwa = extractCTWAConversations(sanitized);
@@ -181,50 +160,38 @@ export async function runAuditJob(
       }
 
       chatsProcessed += batch.length;
-      const pct = 5 + Math.round((chatsProcessed / totalChats) * 65);
+      const pct = 5 + Math.round((chatsProcessed / Math.max(totalChats, 1)) * 65);
       await setProgress(auditId, "fetching_messages", pct, {
         chatsProcessed,
         chatsTotal: totalChats,
       });
 
-      // Throttle between batches; skip delay after the last batch
       if (batchStart + BATCH_SIZE < totalChats) {
         await delay(INTER_BATCH_DELAY_MS);
       }
     }
 
-    // ── 5. Compute hourly activity distribution ───────────────────────────────
     const hourlyActivity = new Array(24).fill(0) as number[];
     for (const msg of allMessages) {
       hourlyActivity[new Date(msg.timestamp * 1000).getHours()]++;
     }
 
-    // ── 6. Aggregate content analysis ────────────────────────────────────────
     const contentAnalysis = aggregateContentAnalysis(chatAnalyses);
 
-    // ── 7. Fetch Meta ad rows for CTWA join ───────────────────────────────────
     await setProgress(auditId, "scoring", 72);
-    const { data: metaRows } = await admin
-      .from("meta_ad_rows")
-      .select("*")
-      .eq("audit_id", auditId) as {
-        data: MetaAdRow[] | null;
-        error: unknown;
-      };
-
-    const matchedCTWA = matchCTWAConversations(
-      ctwaConversations,
-      metaRows ?? []
+    const metaRows = await query<MetaAdRow>(
+      `SELECT * FROM meta_ad_rows WHERE audit_id = $1`,
+      [auditId]
     );
+
+    const matchedCTWA = matchCTWAConversations(ctwaConversations, metaRows);
     const ctwaMetrics =
       matchedCTWA.length > 0
-        ? computeCTWAMetrics(matchedCTWA, metaRows ?? [], allChats.length)
+        ? computeCTWAMetrics(matchedCTWA, metaRows, allChats.length)
         : null;
 
-    // ── 8. Score ──────────────────────────────────────────────────────────────
     const auditScore = scoreAudit(allMessages, businessProfile, ctwaMetrics, contentAnalysis);
 
-    // ── 9. Revenue at risk ────────────────────────────────────────────────────
     const unansweredCount =
       (auditScore.dimensions.answerRate.rawMetric as { total?: number; answered?: number } | null)
         ? (auditScore.dimensions.answerRate.rawMetric as { total: number; answered: number }).total -
@@ -239,22 +206,39 @@ export async function runAuditJob(
           )
         : null;
 
-    // ── 10. Save ───────────────────────────────────────────────────────────────
     await setProgress(auditId, "saving", 90);
 
     if (matchedCTWA.length > 0) {
-      const ctwaInserts: CTWAInsert[] = matchedCTWA.map((c) => ({
-        audit_id: auditId,
-        chat_ref: c.chatRef,
-        referral: c.referral,
-        ad_headline: c.adHeadline,
-        source_url: c.sourceUrl,
-        answered: c.answered,
-        first_response_seconds: c.firstResponseSeconds,
-        matched_meta_row_id: c.matchedMetaRowId,
-        match_confidence: c.matchConfidence,
-      }));
-      await admin.from("ctwa_conversations").insert(ctwaInserts);
+      const pool = getPool();
+      const dbClient = await pool.connect();
+      try {
+        await dbClient.query("BEGIN");
+        for (const c of matchedCTWA) {
+          await dbClient.query(
+            `INSERT INTO ctwa_conversations (
+              audit_id, chat_ref, referral, ad_headline, source_url, answered,
+              first_response_seconds, matched_meta_row_id, match_confidence
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [
+              auditId,
+              c.chatRef,
+              JSON.stringify(c.referral),
+              c.adHeadline,
+              c.sourceUrl,
+              c.answered,
+              c.firstResponseSeconds,
+              c.matchedMetaRowId,
+              c.matchConfidence,
+            ]
+          );
+        }
+        await dbClient.query("COMMIT");
+      } catch (e) {
+        await dbClient.query("ROLLBACK");
+        throw e;
+      } finally {
+        dbClient.release();
+      }
     }
 
     const finalMetrics: AuditMetrics = {
@@ -269,7 +253,6 @@ export async function runAuditJob(
       windowDays,
       windowStart: sinceDate.toISOString(),
       windowEnd: new Date().toISOString(),
-      // Revenue Layer v2
       bookingIntentCount: contentAnalysis.bookingIntentCount,
       confirmedCount: contentAnalysis.confirmedCount,
       bookingIntentRate:
@@ -287,23 +270,30 @@ export async function runAuditJob(
       revenueAtRisk: revenueAtRisk ?? undefined,
     };
 
-    await admin.from("audits").update({
-      status: "complete",
-      overall_score: auditScore.overall,
-      dimension_scores: auditScore.dimensions as unknown as Record<string, unknown>,
-      metrics: {
-        ...finalMetrics as Record<string, unknown>,
-        chatsFailed,
-        progress: { stage: "complete", pct: 100, stageLabel: "Done!" },
-      },
-      completed_at: new Date().toISOString(),
-    } as AuditUpdate).eq("id", auditId);
-
+    await query(
+      `UPDATE audits SET
+        status = 'complete',
+        overall_score = $2,
+        dimension_scores = $3::jsonb,
+        metrics = $4::jsonb,
+        completed_at = NOW()
+       WHERE id = $1`,
+      [
+        auditId,
+        auditScore.overall,
+        JSON.stringify(auditScore.dimensions),
+        JSON.stringify({
+          ...finalMetrics,
+          chatsFailed,
+          progress: { stage: "complete", pct: 100, stageLabel: "Done!" },
+        }),
+      ]
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    await admin.from("audits").update({
-      status: "failed",
-      error_message: message,
-    } as AuditUpdate).eq("id", auditId);
+    await query(
+      `UPDATE audits SET status = 'failed', error_message = $2 WHERE id = $1`,
+      [auditId, message]
+    );
   }
 }

@@ -1,4 +1,4 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { queryOne } from "@/lib/db";
 import { redirect } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
@@ -15,26 +15,18 @@ type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
 type ConsentRow = Database["public"]["Tables"]["consent_records"]["Row"];
 
 async function getClientAndConsent(clientId: string) {
-  const supabase = await createSupabaseServerClient();
-  const { data: client } = await supabase
-    .from("clients")
-    .select("id, name")
-    .eq("id", clientId)
-    .single() as {
-      data: Pick<ClientRow, "id" | "name"> | null;
-      error: unknown;
-    };
+  const client = await queryOne<Pick<ClientRow, "id" | "name">>(
+    `SELECT id, name FROM clients WHERE id = $1`,
+    [clientId]
+  );
 
-  const { data: consent } = await supabase
-    .from("consent_records")
-    .select("id, authorized_by, authorized_at, notes")
-    .eq("client_id", clientId)
-    .order("authorized_at", { ascending: false })
-    .limit(1)
-    .single() as {
-      data: Pick<ConsentRow, "id" | "authorized_by" | "authorized_at" | "notes"> | null;
-      error: unknown;
-    };
+  const consent = await queryOne<
+    Pick<ConsentRow, "id" | "authorized_by" | "authorized_at" | "notes">
+  >(
+    `SELECT id, authorized_by, authorized_at, notes FROM consent_records
+     WHERE client_id = $1 ORDER BY authorized_at DESC LIMIT 1`,
+    [clientId]
+  );
 
   return { client, consent };
 }

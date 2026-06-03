@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { login } from "@/actions/auth";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 
@@ -18,14 +18,10 @@ export default function LoginForm() {
     setError("");
     setLoading(true);
 
-    const supabase = createSupabaseBrowserClient();
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const result = await login(email, password);
 
-    if (authError) {
-      setError(authError.message);
+    if (result.error) {
+      setError(result.error);
       setLoading(false);
       return;
     }
@@ -38,29 +34,29 @@ export default function LoginForm() {
     <form onSubmit={handleSubmit} className="space-y-4">
       <Input
         id="email"
-        label="Email"
         type="email"
-        autoComplete="email"
+        label="Email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         required
+        autoComplete="email"
       />
       <Input
         id="password"
-        label="Password"
         type="password"
-        autoComplete="current-password"
+        label="Password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         required
+        autoComplete="current-password"
       />
       {error && (
-        <p className="rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400 border border-red-500/20">
+        <p className="text-sm text-red-400" role="alert">
           {error}
         </p>
       )}
-      <Button type="submit" loading={loading} className="w-full" size="lg">
-        Sign in
+      <Button type="submit" className="w-full" disabled={loading}>
+        {loading ? "Signing in…" : "Sign in"}
       </Button>
     </form>
   );

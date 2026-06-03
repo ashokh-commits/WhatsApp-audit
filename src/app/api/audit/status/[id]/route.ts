@@ -1,46 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth";
+import { query, queryOne } from "@/lib/db";
 import type { Database } from "@/types/database";
 
 type AuditRow = Database["public"]["Tables"]["audits"]["Row"];
 
-const STALE_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes
+const STALE_TIMEOUT_MS = parseInt(
+  process.env.AUDIT_STALE_TIMEOUT_MS ?? String(35 * 60 * 1000),
+  10
+);
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSession();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data, error } = await supabase
-    .from("audits")
-    .select("id, status, overall_score, error_message, metrics, created_at")
-    .eq("id", params.id)
-    .single() as {
-      data: Pick<AuditRow, "id" | "status" | "overall_score" | "error_message" | "metrics" | "created_at"> | null;
-      error: { message: string } | null;
-    };
+  const data = await queryOne<
+    Pick<AuditRow, "id" | "status" | "overall_score" | "error_message" | "metrics" | "created_at">
+  >(
+    `SELECT id, status, overall_score, error_message, metrics, created_at
+     FROM audits WHERE id = $1`,
+    [params.id]
+  );
 
-  if (error || !data) {
+  if (!data) {
     return NextResponse.json({ error: "Audit not found" }, { status: 404 });
   }
 
-  // Auto-fail audits that have been running/pending longer than the timeout window.
-  // This handles the case where the Vercel function was killed before it could
-  // update the status to "failed".
   if (data.status === "running" || data.status === "pending") {
     const elapsed = Date.now() - new Date(data.created_at).getTime();
     if (elapsed > STALE_TIMEOUT_MS) {
-      const admin = createSupabaseAdminClient();
-      const staleMessage = "Audit timed out. The WhatsApp instance may be slow to respond or the data volume is too large. Please try again.";
-      await admin
-        .from("audits")
-        .update({ status: "failed", error_message: staleMessage } as Database["public"]["Tables"]["audits"]["Update"])
-        .eq("id", params.id);
+      const staleMessage =
+        "Audit timed out. The WhatsApp instance may be slow to respond or the data volume is too large. Please try again.";
+      await query(
+        `UPDATE audits SET status = 'failed', error_message = $2 WHERE id = $1`,
+        [params.id, staleMessage]
+      );
       return NextResponse.json({
         status: "failed",
         overallScore: null,

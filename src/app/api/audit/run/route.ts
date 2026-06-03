@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { waitUntil } from "@vercel/functions";
-import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth";
+import { queryOne } from "@/lib/db";
 import { hasConsent } from "@/actions/consent";
 import { runAuditJob } from "@/lib/auditJob";
-import type { Database } from "@/types/database";
 
-export const maxDuration = 300;
 export const runtime = "nodejs";
 
-type AuditInsert = Database["public"]["Tables"]["audits"]["Insert"];
-
 export async function POST(req: NextRequest) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSession();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -32,31 +27,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const admin = createSupabaseAdminClient();
-  const insert: AuditInsert = {
-    client_id: clientId,
-    window_days: windowDays,
-    status: "pending",
-    created_by: user.id,
-  };
+  const audit = await queryOne<{ id: string }>(
+    `INSERT INTO audits (client_id, window_days, status, created_by)
+     VALUES ($1, $2, 'pending', $3)
+     RETURNING id`,
+    [clientId, windowDays, user.id]
+  );
 
-  const { data: audit, error } = await admin
-    .from("audits")
-    .insert(insert)
-    .select("id")
-    .single() as {
-      data: { id: string } | null;
-      error: { message: string } | null;
-    };
-
-  if (error || !audit) {
-    return NextResponse.json({ error: error?.message ?? "Failed to create audit" }, { status: 500 });
+  if (!audit) {
+    return NextResponse.json({ error: "Failed to create audit" }, { status: 500 });
   }
 
-  waitUntil(
-    runAuditJob(audit.id, clientId, windowDays).catch((err) =>
-      console.error("Audit job error:", err)
-    )
+  void runAuditJob(audit.id, clientId, windowDays).catch((err) =>
+    console.error("Audit job error:", err)
   );
 
   return NextResponse.json({ auditId: audit.id }, { status: 202 });

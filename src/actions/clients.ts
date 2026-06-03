@@ -1,12 +1,13 @@
 "use server";
 
-import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
 import { encrypt } from "@/lib/crypto";
+import { getSession } from "@/lib/auth";
+import { query, queryOne } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import type { Database } from "@/types/database";
 
 type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
-type ClientInsert = Database["public"]["Tables"]["clients"]["Insert"];
+type AuditRow = Database["public"]["Tables"]["audits"]["Row"];
 
 export async function createClient(formData: FormData) {
   const name = formData.get("name") as string;
@@ -19,31 +20,23 @@ export async function createClient(formData: FormData) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await getSession();
     if (!user) return { error: "Unauthorized." };
 
     const encryptedKey = encrypt(instanceKey);
-    const admin = createSupabaseAdminClient();
+    const avgTicket = ticketRaw ? parseFloat(ticketRaw) || 0 : 0;
 
-    const insert: ClientInsert = {
-      name: name.trim(),
-      instance_name: instanceName.trim(),
-      instance_key_encrypted: encryptedKey,
-      avg_ticket_value: ticketRaw ? parseFloat(ticketRaw) || 0 : 0,
-      created_by: user.id,
-    };
+    const row = await queryOne<{ id: string }>(
+      `INSERT INTO clients (name, instance_name, instance_key_encrypted, avg_ticket_value, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id`,
+      [name.trim(), instanceName.trim(), encryptedKey, avgTicket, user.id]
+    );
 
-    const { data, error } = await admin
-      .from("clients")
-      .insert(insert)
-      .select("id")
-      .single() as { data: Pick<ClientRow, "id"> | null; error: { message: string } | null };
-
-    if (error) return { error: error.message };
+    if (!row) return { error: "Failed to create client." };
 
     revalidatePath("/dashboard");
-    return { success: true, clientId: data!.id };
+    return { success: true, clientId: row.id };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected server error.";
     return { error: message };
@@ -51,57 +44,40 @@ export async function createClient(formData: FormData) {
 }
 
 export async function listClients() {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("clients")
-    .select("id, name, instance_name, created_at")
-    .order("created_at", { ascending: false }) as {
-      data: Array<Pick<ClientRow, "id" | "name" | "instance_name" | "created_at">> | null;
-      error: { message: string } | null;
-    };
-
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return query<Pick<ClientRow, "id" | "name" | "instance_name" | "created_at">>(
+    `SELECT id, name, instance_name, created_at FROM clients ORDER BY created_at DESC`
+  );
 }
 
 export async function getClientWithAudit(clientId: string) {
-  const supabase = await createSupabaseServerClient();
-  type AuditRow = Database["public"]["Tables"]["audits"]["Row"];
+  const client = await queryOne<
+    Pick<ClientRow, "id" | "name" | "instance_name" | "avg_ticket_value" | "created_at">
+  >(
+    `SELECT id, name, instance_name, avg_ticket_value, created_at FROM clients WHERE id = $1`,
+    [clientId]
+  );
+  if (!client) throw new Error("Client not found");
 
-  const { data: client, error: cErr } = await supabase
-    .from("clients")
-    .select("id, name, instance_name, avg_ticket_value, created_at")
-    .eq("id", clientId)
-    .single() as {
-      data: Pick<ClientRow, "id" | "name" | "instance_name" | "avg_ticket_value" | "created_at"> | null;
-      error: { message: string } | null;
-    };
-  if (cErr || !client) throw new Error(cErr?.message ?? "Client not found");
+  const lastAudit = await queryOne<
+    Pick<AuditRow, "id" | "overall_score" | "status" | "created_at">
+  >(
+    `SELECT id, overall_score, status, created_at FROM audits
+     WHERE client_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [clientId]
+  );
 
-  const admin = createSupabaseAdminClient();
-  const { data: lastAudit } = await admin
-    .from("audits")
-    .select("id, overall_score, status, created_at")
-    .eq("client_id", clientId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single() as {
-      data: Pick<AuditRow, "id" | "overall_score" | "status" | "created_at"> | null;
-      error: unknown;
-    };
-
-  const { count } = await admin
-    .from("consent_records")
-    .select("id", { count: "exact", head: true })
-    .eq("client_id", clientId);
+  const consent = await queryOne<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM consent_records WHERE client_id = $1`,
+    [clientId]
+  );
 
   return {
     id: client.id,
     name: client.name,
     instance_name: client.instance_name,
-    avg_ticket_value: client.avg_ticket_value,
+    avg_ticket_value: Number(client.avg_ticket_value),
     created_at: client.created_at,
     lastAudit: lastAudit ?? null,
-    hasConsent: (count ?? 0) > 0,
+    hasConsent: parseInt(consent?.count ?? "0", 10) > 0,
   };
 }

@@ -7,16 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "create-user": "tsx scripts/create-user.ts",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@react-pdf/renderer": "^3.4.5",
-    "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2.106.2",
-    "@vercel/functions": "^3.6.1",
+    "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
+    "jose": "^5.9.6",
+    "pg": "^8.13.1",
     "next": "14.2.35",
     "papaparse": "^5.5.3",
     "react": "^18",
@@ -25,8 +26,10 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/jest": "^29.5.14",
     "@types/node": "^20",
+    "@types/pg": "^8.11.10",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^18",
     "@types/react-dom": "^18",
@@ -38,6 +41,7 @@
     "tailwindcss": "^3.4.1",
     "ts-jest": "^29.4.11",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }

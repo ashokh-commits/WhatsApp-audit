@@ -1,84 +1,75 @@
 "use server";
 
-import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth";
+import { query, queryOne } from "@/lib/db";
 import { applyMapping } from "@/lib/utils/parseSpreadsheet";
 import type { ColumnMapping } from "@/types/ctwa";
 import type { Database } from "@/types/database";
 
-type MetaAdInsert = Database["public"]["Tables"]["meta_ad_rows"]["Insert"];
+type MetaAdRow = Database["public"]["Tables"]["meta_ad_rows"]["Row"];
+type AuditRow = Database["public"]["Tables"]["audits"]["Row"];
+type CtwaRow = Database["public"]["Tables"]["ctwa_conversations"]["Row"];
 
 export async function uploadMetaRows(
   auditId: string,
   rawRows: Array<Record<string, string | number | null>>,
   mapping: ColumnMapping
 ) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSession();
   if (!user) return { error: "Unauthorized." };
 
   const parsed = applyMapping(rawRows, mapping);
   if (parsed.length === 0) return { error: "No rows to import." };
 
-  const admin = createSupabaseAdminClient();
-  const inserts: MetaAdInsert[] = parsed.map((row) => ({
-    audit_id: auditId,
-    campaign_name: row.campaign_name,
-    adset_name:    row.adset_name,
-    ad_name:       row.ad_name,
-    spend:         row.spend,
-    impressions:   row.impressions,
-    clicks:        row.clicks,
-    results:       row.results,
-    source:        "csv" as const,
-    raw_row:       row.raw_row as Record<string, unknown>,
-  }));
+  const pool = (await import("@/lib/db")).getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const row of parsed) {
+      await client.query(
+        `INSERT INTO meta_ad_rows (
+          audit_id, campaign_name, adset_name, ad_name, spend, impressions, clicks, results, source, raw_row
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'csv',$9)`,
+        [
+          auditId,
+          row.campaign_name,
+          row.adset_name,
+          row.ad_name,
+          row.spend,
+          row.impressions,
+          row.clicks,
+          row.results,
+          JSON.stringify(row.raw_row),
+        ]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    const message = err instanceof Error ? err.message : "Import failed.";
+    return { error: message };
+  } finally {
+    client.release();
+  }
 
-  const { error } = await admin
-    .from("meta_ad_rows")
-    .insert(inserts) as { error: { message: string } | null };
-
-  if (error) return { error: error.message };
-
-  return { success: true, rowCount: inserts.length };
+  return { success: true, rowCount: parsed.length };
 }
 
 export async function getAudit(auditId: string) {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("audits")
-    .select(`
-      id, client_id, window_days, overall_score, dimension_scores,
-      metrics, status, error_message, created_at, completed_at
-    `)
-    .eq("id", auditId)
-    .single() as {
-      data: Database["public"]["Tables"]["audits"]["Row"] | null;
-      error: { message: string } | null;
-    };
-  if (error) throw new Error(error.message);
-  return data;
+  const audit = await queryOne<AuditRow>(
+    `SELECT id, client_id, window_days, overall_score, dimension_scores,
+            metrics, status, error_message, created_at, completed_at
+     FROM audits WHERE id = $1`,
+    [auditId]
+  );
+  if (!audit) throw new Error("Audit not found");
+  return audit;
 }
 
 export async function getAuditCTWARows(auditId: string) {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("ctwa_conversations")
-    .select("*")
-    .eq("audit_id", auditId) as {
-      data: Database["public"]["Tables"]["ctwa_conversations"]["Row"][] | null;
-      error: unknown;
-    };
-  return data ?? [];
+  return query<CtwaRow>(`SELECT * FROM ctwa_conversations WHERE audit_id = $1`, [auditId]);
 }
 
 export async function getAuditMetaRows(auditId: string) {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("meta_ad_rows")
-    .select("*")
-    .eq("audit_id", auditId) as {
-      data: Database["public"]["Tables"]["meta_ad_rows"]["Row"][] | null;
-      error: unknown;
-    };
-  return data ?? [];
+  return query<MetaAdRow>(`SELECT * FROM meta_ad_rows WHERE audit_id = $1`, [auditId]);
 }

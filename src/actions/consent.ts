@@ -1,11 +1,11 @@
 "use server";
 
-import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth";
+import { query, queryOne } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import type { Database } from "@/types/database";
 
 type ConsentRow = Database["public"]["Tables"]["consent_records"]["Row"];
-type ConsentInsert = Database["public"]["Tables"]["consent_records"]["Insert"];
 
 export async function recordConsent(formData: FormData) {
   const clientId = formData.get("client_id") as string;
@@ -17,24 +17,25 @@ export async function recordConsent(formData: FormData) {
     return { error: "Client and authorizing contact are required." };
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSession();
   if (!user) return { error: "Unauthorized." };
 
-  const insert: ConsentInsert = {
-    client_id: clientId,
-    authorized_by: authorizedBy.trim(),
-    notes: notes?.trim() || null,
-    document_url: documentUrl?.trim() || null,
-    created_by: user.id,
-  };
-
-  const admin = createSupabaseAdminClient();
-  const { error } = await admin
-    .from("consent_records")
-    .insert(insert) as { error: { message: string } | null };
-
-  if (error) return { error: error.message };
+  try {
+    await query(
+      `INSERT INTO consent_records (client_id, authorized_by, notes, document_url, created_by)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        clientId,
+        authorizedBy.trim(),
+        notes?.trim() || null,
+        documentUrl?.trim() || null,
+        user.id,
+      ]
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to save consent.";
+    return { error: message };
+  }
 
   revalidatePath(`/consent/${clientId}`);
   revalidatePath("/dashboard");
@@ -42,25 +43,20 @@ export async function recordConsent(formData: FormData) {
 }
 
 export async function getConsentRecord(clientId: string) {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("consent_records")
-    .select("id, authorized_by, authorized_at, document_url, notes")
-    .eq("client_id", clientId)
-    .order("authorized_at", { ascending: false })
-    .limit(1)
-    .single() as {
-      data: Pick<ConsentRow, "id" | "authorized_by" | "authorized_at" | "document_url" | "notes"> | null;
-      error: unknown;
-    };
-  return data;
+  return queryOne<
+    Pick<ConsentRow, "id" | "authorized_by" | "authorized_at" | "document_url" | "notes">
+  >(
+    `SELECT id, authorized_by, authorized_at, document_url, notes
+     FROM consent_records WHERE client_id = $1
+     ORDER BY authorized_at DESC LIMIT 1`,
+    [clientId]
+  );
 }
 
 export async function hasConsent(clientId: string): Promise<boolean> {
-  const supabase = await createSupabaseServerClient();
-  const { count } = await supabase
-    .from("consent_records")
-    .select("id", { count: "exact", head: true })
-    .eq("client_id", clientId);
-  return (count ?? 0) > 0;
+  const row = await queryOne<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM consent_records WHERE client_id = $1`,
+    [clientId]
+  );
+  return parseInt(row?.count ?? "0", 10) > 0;
 }

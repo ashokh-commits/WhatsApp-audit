@@ -1,4 +1,5 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth";
+import { queryOne } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { renderToBuffer } from "@react-pdf/renderer";
 import AuditPdfDocument from "@/components/pdf/AuditPdfDocument";
@@ -15,26 +16,25 @@ interface Params {
 }
 
 export async function GET(_req: Request, { params }: Params) {
-  const supabase = await createSupabaseServerClient();
+  const user = await getSession();
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
 
-  const { data: audit, error } = await supabase
-    .from("audits")
-    .select("id, client_id, window_days, overall_score, dimension_scores, metrics, status, created_at, completed_at")
-    .eq("id", params.id)
-    .single() as { data: AuditRow | null; error: { message: string } | null };
+  const audit = await queryOne<AuditRow>(
+    `SELECT id, client_id, window_days, overall_score, dimension_scores, metrics, status, created_at, completed_at
+     FROM audits WHERE id = $1`,
+    [params.id]
+  );
 
-  if (error || !audit) {
+  if (!audit) {
     notFound();
   }
 
-  const { data: client } = await supabase
-    .from("clients")
-    .select("name, avg_ticket_value")
-    .eq("id", audit.client_id)
-    .single() as {
-      data: Pick<ClientRow, "name" | "avg_ticket_value"> | null;
-      error: unknown;
-    };
+  const client = await queryOne<Pick<ClientRow, "name" | "avg_ticket_value">>(
+    `SELECT name, avg_ticket_value FROM clients WHERE id = $1`,
+    [audit.client_id]
+  );
 
   const clientName = client?.name ?? "Client";
 
@@ -49,7 +49,6 @@ export async function GET(_req: Request, { params }: Params) {
       completed_at: audit.completed_at,
     },
     clientName,
-  // renderToBuffer expects ReactElement<DocumentProps> but our wrapper is compatible at runtime
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   }) as any;
   const buffer = await renderToBuffer(element);

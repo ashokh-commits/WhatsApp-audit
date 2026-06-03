@@ -8,19 +8,18 @@ A production web app for G6 Labs Asia that audits a client's WhatsApp Business a
 
 - Next.js 14+ (App Router, TypeScript)
 - Tailwind CSS with G6 brand tokens
-- Supabase (Postgres + Auth) via `@supabase/ssr`
+- PostgreSQL (`pg`) with cookie session auth
 - `@react-pdf/renderer` for PDF export
 - `papaparse` + `xlsx` for CSV/XLSX parsing
-- Vercel deployment
+- Self-hosted on a VPS (see [docs/DEPLOY-VPS.md](docs/DEPLOY-VPS.md))
 
 ---
 
 ## Prerequisites
 
 - Node.js 18+
-- A Supabase project (free tier works)
+- PostgreSQL 14+ (local or on your VPS)
 - A self-hosted [Evolution API v2](https://github.com/EvolutionAPI/evolution-api) instance
-- A Vercel account for deployment
 
 ---
 
@@ -34,40 +33,33 @@ cd whatsapp-audit
 npm install
 ```
 
-### 2. Create Supabase project
+### 2. Database
 
-1. Go to [supabase.com](https://supabase.com) and create a new project
-2. In the SQL Editor, run the migrations in order:
-   ```
-   supabase/migrations/0001_initial_schema.sql
-   supabase/migrations/0002_rls_policies.sql
-   ```
-3. Note your project URL and keys from **Settings → API**
+```bash
+createdb g6audit   # or use your own DB name
+export DATABASE_URL="postgresql://localhost:5432/g6audit"
+psql "$DATABASE_URL" -f db/migrations/001_schema.sql
+```
 
-### 3. Configure environment variables
+### 3. Environment variables
 
 ```bash
 cp .env.example .env.local
 ```
 
-Edit `.env.local` with your values:
-
-| Variable | Where to find it |
+| Variable | Notes |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API → Project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → service_role key |
+| `DATABASE_URL` | Postgres connection string |
+| `SESSION_SECRET` | `openssl rand -hex 32` (≥ 32 chars) |
 | `EVOLUTION_API_URL` | Your Evolution API server URL |
-| `EVOLUTION_GLOBAL_KEY` | Evolution admin API key (in server config) |
-| `ENCRYPTION_KEY` | Generate: `openssl rand -hex 32` |
+| `EVOLUTION_GLOBAL_KEY` | Evolution admin API key |
+| `ENCRYPTION_KEY` | `openssl rand -hex 32` |
 
-### 4. Seed the first user
+### 4. Create the first user
 
-No public signup is enabled. Create your first user via the Supabase dashboard:
-
-1. Go to **Authentication → Users** in your Supabase project
-2. Click **Add user** → **Create new user**
-3. Enter email and password for your agency account
+```bash
+npm run create-user -- you@agency.com 'your-password'
+```
 
 ### 5. Run locally
 
@@ -75,17 +67,17 @@ No public signup is enabled. Create your first user via the Supabase dashboard:
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) and sign in with the user you created.
+Visit [http://localhost:3000](http://localhost:3000) and sign in.
 
 ### 6. Verify Evolution API connection
 
-Visit `/api/health` after signing in — it should return JSON with `connected: true` and list your instances.
+Visit `/api/health` — it should return JSON with `connected: true` and list your instances.
 
 ---
 
 ## Evolution API Requirements
 
-- Evolution API v2 must be running and accessible from your Vercel deployment
+- Evolution API v2 must be running and reachable from the app server
 - Each client needs a separate **instance** created in Evolution API
 - The instance must be in **connected** (`open`) state before running an audit
 - You'll need the **instance API key** (not the global key) when adding a client
@@ -112,14 +104,9 @@ To get the Paid Lead Leakage section populated:
 
 ---
 
-## Vercel Deployment
+## VPS deployment
 
-1. Push to GitHub
-2. Import project in [Vercel](https://vercel.com)
-3. Set all environment variables from `.env.example` in Vercel → Settings → Environment Variables
-4. Deploy
-
-> **Important:** Vercel Hobby tier has a 60-second serverless function limit. Audits on accounts with many conversations may time out. Vercel Pro (300s limit) is recommended for production use.
+Full SSH guide: **[docs/DEPLOY-VPS.md](docs/DEPLOY-VPS.md)** — Postgres on the VPS, Nginx, PM2, no Supabase or Vercel.
 
 ---
 
@@ -141,8 +128,8 @@ src/
   lib/          Core business logic (evolution.ts, scoring.ts, ctwa.ts, crypto.ts)
   actions/      Server Actions (audit.ts, clients.ts, consent.ts)
   types/        TypeScript type definitions
-supabase/
-  migrations/   SQL schema and RLS policy migrations
+db/
+  migrations/   PostgreSQL schema (VPS / local)
 tests/unit/     Jest unit tests for scoring and CTWA logic
 ```
 

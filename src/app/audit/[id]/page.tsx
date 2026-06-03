@@ -1,4 +1,4 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { query, queryOne } from "@/lib/db";
 import { notFound } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
@@ -20,37 +20,31 @@ type CTWARow = Database["public"]["Tables"]["ctwa_conversations"]["Row"];
 type MetaRow = Database["public"]["Tables"]["meta_ad_rows"]["Row"];
 
 export default async function AuditPage({ params }: Props) {
-  const supabase = await createSupabaseServerClient();
+  const audit = await queryOne<AuditRow>(
+    `SELECT id, client_id, window_days, overall_score, dimension_scores,
+            metrics, status, error_message, created_at, completed_at
+     FROM audits WHERE id = $1`,
+    [params.id]
+  );
 
-  const { data: audit, error } = await supabase
-    .from("audits")
-    .select(`
-      id, client_id, window_days, overall_score, dimension_scores,
-      metrics, status, error_message, created_at, completed_at
-    `)
-    .eq("id", params.id)
-    .single() as { data: AuditRow | null; error: { message: string } | null };
+  if (!audit) notFound();
 
-  if (error || !audit) notFound();
+  const client = await queryOne<
+    Pick<ClientRow, "name" | "instance_name" | "avg_ticket_value">
+  >(
+    `SELECT name, instance_name, avg_ticket_value FROM clients WHERE id = $1`,
+    [audit.client_id]
+  );
 
-  const { data: client } = await supabase
-    .from("clients")
-    .select("name, instance_name, avg_ticket_value")
-    .eq("id", audit.client_id)
-    .single() as {
-      data: Pick<ClientRow, "name" | "instance_name" | "avg_ticket_value"> | null;
-      error: unknown;
-    };
+  const ctwaRows = await query<CTWARow>(
+    `SELECT * FROM ctwa_conversations WHERE audit_id = $1`,
+    [params.id]
+  );
 
-  const { data: ctwaRows } = await supabase
-    .from("ctwa_conversations")
-    .select("*")
-    .eq("audit_id", params.id) as { data: CTWARow[] | null; error: unknown };
-
-  const { data: metaRows } = await supabase
-    .from("meta_ad_rows")
-    .select("*")
-    .eq("audit_id", params.id) as { data: MetaRow[] | null; error: unknown };
+  const metaRows = await query<MetaRow>(
+    `SELECT * FROM meta_ad_rows WHERE audit_id = $1`,
+    [params.id]
+  );
 
   const isRunning = audit.status === "pending" || audit.status === "running";
 
@@ -87,7 +81,7 @@ export default async function AuditPage({ params }: Props) {
             <AuditReport
               audit={audit}
               clientName={client?.name ?? "Client"}
-              avgTicketValue={client?.avg_ticket_value ?? 0}
+              avgTicketValue={Number(client?.avg_ticket_value ?? 0)}
               ctwaRows={(ctwaRows ?? []) as Record<string, unknown>[]}
               metaRows={(metaRows ?? []) as Record<string, unknown>[]}
             />
