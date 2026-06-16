@@ -7,6 +7,7 @@ import Card, { CardTitle } from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import ExportButton from "./ExportButton";
 import PaidLeakageSection from "./PaidLeakageSection";
+import AISettingsGenerator from "./AISettingsGenerator";
 import { formatPct } from "@/lib/utils/format";
 
 
@@ -391,6 +392,9 @@ export default function AuditReport({ audit, clientName, avgTicketValue = 0, ctw
         metrics={metrics}
         coveragePct={coverage}
       />
+
+      {/* AI Chatbot Settings Generator */}
+      <AISettingsGenerator auditId={audit.id} />
     </div>
   );
 }
