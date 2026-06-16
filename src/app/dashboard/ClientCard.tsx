@@ -33,9 +33,7 @@ function ScoreRing({ score }: { score: number }) {
       <svg width="72" height="72" className="-rotate-90">
         <circle cx="36" cy="36" r={r} fill="none" stroke="#2A2D36" strokeWidth="6" />
         <circle
-          cx="36"
-          cy="36"
-          r={r}
+          cx="36" cy="36" r={r}
           fill="none"
           stroke={color}
           strokeWidth="6"
@@ -55,12 +53,18 @@ export default function ClientCard({ client }: { client: Client }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [windowDays, setWindowDays] = useState(90);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const auditInProgress =
+    client.lastAudit?.status === "running" ||
+    client.lastAudit?.status === "pending";
 
   async function handleRunAudit() {
     if (!client.hasConsent) {
       router.push(`/consent/${client.id}`);
       return;
     }
+    setErrorMsg(null);
     setLoading(true);
     try {
       const res = await fetch("/api/audit/run", {
@@ -72,11 +76,11 @@ export default function ClientCard({ client }: { client: Client }) {
       if (data.auditId) {
         router.push(`/audit/${data.auditId}`);
       } else {
-        alert(data.error ?? "Failed to start audit");
+        setErrorMsg(data.error ?? "Failed to start audit");
         setLoading(false);
       }
     } catch {
-      alert("Network error — please try again.");
+      setErrorMsg("Network error — please try again.");
       setLoading(false);
     }
   }
@@ -99,12 +103,12 @@ export default function ClientCard({ client }: { client: Client }) {
           <span className="font-body text-xs text-gray-500">
             {new Date(client.lastAudit.created_at).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}
           </span>
-          {client.lastAudit.status === "complete" && (
+          {(client.lastAudit.status === "complete" || auditInProgress) && (
             <Link
               href={`/audit/${client.lastAudit.id}`}
               className="ml-auto font-body text-xs text-g6-accent hover:underline"
             >
-              View report →
+              {auditInProgress ? "View progress →" : "View report →"}
             </Link>
           )}
         </div>
@@ -116,25 +120,42 @@ export default function ClientCard({ client }: { client: Client }) {
         </p>
       )}
 
-      <div className="flex items-center gap-2">
-        <select
-          value={windowDays}
-          onChange={(e) => setWindowDays(Number(e.target.value))}
-          className="rounded border border-g6-border bg-g6-surface px-2 py-1.5 text-xs text-white focus:outline-none"
-        >
-          <option value={30}>30 days</option>
-          <option value={60}>60 days</option>
-          <option value={90}>90 days</option>
-        </select>
+      {errorMsg && (
+        <p className="rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-400 border border-red-500/20 font-body">
+          {errorMsg}
+        </p>
+      )}
+
+      {auditInProgress ? (
         <Button
           size="sm"
-          loading={loading}
-          onClick={handleRunAudit}
-          className="flex-1"
+          variant="secondary"
+          onClick={() => router.push(`/audit/${client.lastAudit!.id}`)}
+          className="w-full"
         >
-          {client.hasConsent ? "Run Audit" : "Record Consent"}
+          View Progress
         </Button>
-      </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <select
+            value={windowDays}
+            onChange={(e) => setWindowDays(Number(e.target.value))}
+            className="rounded border border-g6-border bg-g6-surface px-2 py-1.5 text-xs text-white focus:outline-none"
+          >
+            <option value={30}>30 days</option>
+            <option value={60}>60 days</option>
+            <option value={90}>90 days</option>
+          </select>
+          <Button
+            size="sm"
+            loading={loading}
+            onClick={handleRunAudit}
+            className="flex-1"
+          >
+            {client.hasConsent ? "Run Audit" : "Record Consent"}
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }

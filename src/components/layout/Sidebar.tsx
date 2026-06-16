@@ -7,7 +7,7 @@ const navItems = [
   { href: "/dashboard",   label: "Dashboard" },
   { href: "/clients/new", label: "Add Client" },
   { href: "/ctwa/import", label: "Import Ads" },
-  { href: "/api/health",  label: "API Health" },
+  { href: "/health",     label: "API Health" },
 ];
 
 export default function Sidebar() {
